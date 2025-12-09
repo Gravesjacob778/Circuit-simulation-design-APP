@@ -392,30 +392,45 @@ class CircuitSimulator {
             // Calculate current using Ohm's law if resistors exist
             if (resistors.length > 0) {
                 const totalResistance = resistors.reduce((sum, r) => sum + r.value, 0);
-                const current = totalVoltage / totalResistance;
-                results += `<div class="result-item">
-                    <span class="result-label">Current (I = V/R):</span><br>
-                    <span class="result-value">${(current * 1000).toFixed(2)} mA</span>
-                </div>`;
+                if (totalResistance > 0) {
+                    const current = totalVoltage / totalResistance;
+                    results += `<div class="result-item">
+                        <span class="result-label">Current (I = V/R):</span><br>
+                        <span class="result-value">${(current * 1000).toFixed(2)} mA</span>
+                    </div>`;
 
-                // Calculate power
-                const power = totalVoltage * current;
-                results += `<div class="result-item">
-                    <span class="result-label">Power (P = V×I):</span><br>
-                    <span class="result-value">${(power * 1000).toFixed(2)} mW</span>
-                </div>`;
+                    // Calculate power
+                    const power = totalVoltage * current;
+                    results += `<div class="result-item">
+                        <span class="result-label">Power (P = V×I):</span><br>
+                        <span class="result-value">${(power * 1000).toFixed(2)} mW</span>
+                    </div>`;
+                } else {
+                    results += `<div class="result-item">
+                        <span class="result-label">Warning:</span><br>
+                        <span class="result-value">Zero resistance detected</span>
+                    </div>`;
+                }
             }
         }
 
         // Capacitor info (series calculation: 1/C_total = 1/C1 + 1/C2 + ...)
         const capacitors = this.components.filter(c => c.type === 'capacitor');
         if (capacitors.length > 0) {
-            const inverseCapacitance = capacitors.reduce((sum, c) => sum + (1 / c.value), 0);
-            const totalCapacitance = 1 / inverseCapacitance;
-            results += `<div class="result-item">
-                <span class="result-label">Total Capacitance (Series):</span><br>
-                <span class="result-value">${(totalCapacitance * 1000000).toFixed(2)} µF</span>
-            </div>`;
+            const validCapacitors = capacitors.filter(c => c.value > 0);
+            if (validCapacitors.length > 0) {
+                const inverseCapacitance = validCapacitors.reduce((sum, c) => sum + (1 / c.value), 0);
+                const totalCapacitance = 1 / inverseCapacitance;
+                results += `<div class="result-item">
+                    <span class="result-label">Total Capacitance (Series):</span><br>
+                    <span class="result-value">${(totalCapacitance * 1000000).toFixed(2)} µF</span>
+                </div>`;
+            } else {
+                results += `<div class="result-item">
+                    <span class="result-label">Warning:</span><br>
+                    <span class="result-value">Invalid capacitor values</span>
+                </div>`;
+            }
         }
 
         // Inductor info
