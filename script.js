@@ -10,7 +10,6 @@ class CircuitComponent {
         this.width = 60;
         this.height = 40;
         this.value = this.getDefaultValue();
-        this.connections = [];
         this.selected = false;
     }
 
@@ -361,7 +360,7 @@ class CircuitSimulator {
     }
 
     simulate() {
-        // Simple simulation: calculate total resistance in series
+        // Simple simulation: assumes all components are in series configuration
         const resistors = this.components.filter(c => c.type === 'resistor');
         const voltageSources = this.components.filter(c => c.type === 'voltage-source');
         
@@ -408,12 +407,13 @@ class CircuitSimulator {
             }
         }
 
-        // Capacitor info
+        // Capacitor info (series calculation: 1/C_total = 1/C1 + 1/C2 + ...)
         const capacitors = this.components.filter(c => c.type === 'capacitor');
         if (capacitors.length > 0) {
-            const totalCapacitance = capacitors.reduce((sum, c) => sum + c.value, 0);
+            const inverseCapacitance = capacitors.reduce((sum, c) => sum + (1 / c.value), 0);
+            const totalCapacitance = 1 / inverseCapacitance;
             results += `<div class="result-item">
-                <span class="result-label">Total Capacitance:</span><br>
+                <span class="result-label">Total Capacitance (Series):</span><br>
                 <span class="result-value">${(totalCapacitance * 1000000).toFixed(2)} µF</span>
             </div>`;
         }

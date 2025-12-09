@@ -91,11 +91,14 @@ npx serve
 
 ### Simulation Engine
 
-The application uses simplified circuit analysis:
+The application uses simplified circuit analysis with series configuration assumptions:
 - **Series Resistance**: R_total = R₁ + R₂ + R₃ + ...
+- **Series Capacitance**: 1/C_total = 1/C₁ + 1/C₂ + 1/C₃ + ...
+- **Series Inductance**: L_total = L₁ + L₂ + L₃ + ...
 - **Ohm's Law**: I = V / R
 - **Power Calculation**: P = V × I
-- **Series Capacitance/Inductance**: Simple summation (simplified model)
+
+**Note**: The current version assumes all components are in series. Parallel circuit analysis is planned for a future release.
 
 ### Component Classes
 
