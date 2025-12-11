@@ -59,6 +59,26 @@ const group = new Konva.Group({ ... });
 drawComponentShape(group, component);
 ```
 
+## 幾何計算工具
+
+**`@/lib/geometryUtils.ts`**
+- 包含幾何計算相關的工具函數
+- 函數列表：
+  - `getRotatedPortPosition()` - 計算旋轉後的端點位置
+  - `calculateOrthogonalPath()` - 計算直角走線路徑（支援 L 型和 Z 型）
+
+使用範例：
+
+```typescript
+import { getRotatedPortPosition, calculateOrthogonalPath } from '@/lib/geometryUtils';
+
+// 計算旋轉後的端點位置
+const portPos = getRotatedPortPosition(100, 100, 30, 0, 90);
+
+// 計算走線路徑
+const path = calculateOrthogonalPath(0, 0, 100, 100, 20, true); // Z 型路徑
+```
+
 ## 未來擴展
 
 可以考慮進一步模組化：

@@ -10,6 +10,8 @@ import { useCircuitStore } from '@/stores/circuitStore';
 import { useUIStore } from '@/stores/uiStore';
 import type { CircuitComponent, ComponentType, Wire } from '@/types/circuit';
 import { drawComponentShape } from './renderers/componentRenderers';
+import { getRotatedPortPosition, calculateOrthogonalPath } from '@/lib/geometryUtils';
+import { smartOrthogonalRoute, buildExistingWireSegments } from '@/lib/smartRouter';
 
 const circuitStore = useCircuitStore();
 const uiStore = useUIStore();
@@ -92,52 +94,6 @@ function clearGuides() {
 }
 
 /**
- * 計算旋轉後的端點位置
- * @param componentX 元件中心 X 座標
- * @param componentY 元件中心 Y 座標
- * @param offsetX 端點相對於元件中心的 X 偏移
- * @param offsetY 端點相對於元件中心的 Y 偏移
- * @param rotation 元件旋轉角度（度）
- * @returns 旋轉後的全域座標
- */
-function getRotatedPortPosition(
-  componentX: number,
-  componentY: number,
-  offsetX: number,
-  offsetY: number,
-  rotation: number
-): { x: number; y: number } {
-  // 將角度轉換為弧度
-  const rad = (rotation * Math.PI) / 180;
-  
-  // 旋轉矩陣計算
-  const rotatedX = offsetX * Math.cos(rad) - offsetY * Math.sin(rad);
-  const rotatedY = offsetX * Math.sin(rad) + offsetY * Math.cos(rad);
-  
-  return {
-    x: componentX + rotatedX,
-    y: componentY + rotatedY,
-  };
-}
-
-/**
- * 計算直角走線路徑 (Manhattan Routing)
- */
-function calculateOrthogonalPath(x1: number, y1: number, x2: number, y2: number): number[] {
-  const gridSize = uiStore.gridSize;
-  const dx = Math.abs(x2 - x1);
-  const dy = Math.abs(y2 - y1);
-  
-  if (dx >= dy) {
-    const midX = Math.round((x1 + x2) / 2 / gridSize) * gridSize;
-    return [x1, y1, midX, y1, midX, y2, x2, y2];
-  } else {
-    const midY = Math.round((y1 + y2) / 2 / gridSize) * gridSize;
-    return [x1, y1, x1, midY, x2, midY, x2, y2];
-  }
-}
-
-/**
  * 繪製臨時接線預覽
  */
 function drawWiringPreview(targetX: number, targetY: number) {
@@ -146,7 +102,8 @@ function drawWiringPreview(targetX: number, targetY: number) {
 
   const points = calculateOrthogonalPath(
     wiringStartPort.x, wiringStartPort.y,
-    targetX, targetY
+    targetX, targetY,
+    uiStore.gridSize
   );
 
   const previewLine = new Konva.Line({
@@ -544,7 +501,7 @@ function updateComponentVisuals() {
   componentLayer?.batchDraw();
 }
 
-// 繪製導線 (使用直角路徑)
+// 繪製導線 (使用智慧路由)
 function drawWire(wire: Wire): Konva.Group {
   const wireGroup = new Konva.Group({ id: wire.id });
   
@@ -585,13 +542,32 @@ function drawWire(wire: Wire): Konva.Group {
   const endX = endPos.x;
   const endY = endPos.y;
 
-  // 使用直角路徑
-  const points = calculateOrthogonalPath(startX, startY, endX, endY);
+  // 建立已存在導線段（排除當前導線）
+  const existingSegments = buildExistingWireSegments(circuitStore.wires, wire.id);
+
+  // 使用智慧路由引擎
+  const points = smartOrthogonalRoute(
+    startX, startY,
+    endX, endY,
+    circuitStore.components,
+    existingSegments,
+    uiStore.gridSize,
+    { width: stage?.width() || 2000, height: stage?.height() || 2000 },
+    {
+      startComponentId: wire.fromComponentId,
+      endComponentId: wire.toComponentId,
+      startPortOffset: { x: fromPort.offsetX, y: fromPort.offsetY },
+      endPortOffset: { x: toPort.offsetX, y: toPort.offsetY },
+      startRotation: fromComp.rotation,
+      endRotation: toComp.rotation,
+    }
+  );
+  
   const isSelected = wire.id === circuitStore.selectedWireId;
 
   const line = new Konva.Line({
     points,
-    stroke: isSelected ? '#ffeb3b' : '#ffcc00', // 黃色導線
+    stroke: isSelected ? '#ffeb3b' : '#ffcc00',
     strokeWidth: isSelected ? 3 : 2,
     lineCap: 'round',
     lineJoin: 'round',
@@ -622,7 +598,7 @@ function drawWire(wire: Wire): Konva.Group {
   wireGroup.on('click tap', (e) => {
     e.cancelBubble = true;
     circuitStore.selectWire(wire.id);
-    renderAllWires(); // 重繪以顯示選取狀態
+    renderAllWires();
   });
 
   return wireGroup;
@@ -790,7 +766,9 @@ onMounted(() => {
     if (isWiring && wiringStartPort) {
       const pos = stage.getPointerPosition();
       if (pos) {
-        drawWiringPreview(pos.x, pos.y);
+        // 將目標點吸附到網格，確保轉角對齊
+        const snappedPos = uiStore.snapPosition(pos.x, pos.y);
+        drawWiringPreview(snappedPos.x, snappedPos.y);
       }
     }
   });
