@@ -132,12 +132,27 @@ export const useCircuitStore = defineStore('circuit', () => {
         const definition = getComponentDefinition(type);
         const componentNumber = components.value.filter((c) => c.type === type).length + 1;
 
+        // 定義需要垂直放置的元件類型（原本是水平的）
+        const horizontalComponents: ComponentType[] = [
+            'resistor',
+            'capacitor',
+            'inductor',
+            'diode',
+            'led',
+            'switch',
+            'ammeter',
+            'voltmeter',
+        ];
+
+        // 如果是水平元件，初始旋轉 90 度使其垂直
+        const initialRotation = horizontalComponents.includes(type) ? 90 : 0;
+
         const newComponent: CircuitComponent = {
             id: uuidv4(),
             type,
             x,
             y,
-            rotation: 0,
+            rotation: initialRotation,
             value: value ?? definition?.defaultValue,
             unit: definition?.defaultUnit,
             label: `${type.charAt(0).toUpperCase()}${componentNumber}`,

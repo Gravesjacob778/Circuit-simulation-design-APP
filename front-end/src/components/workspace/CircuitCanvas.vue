@@ -24,6 +24,7 @@ const isCanvasEmpty = computed(() => {
 // Konva 實例
 let stage: Konva.Stage;
 let gridLayer: Konva.Layer;
+let guideLayer: Konva.Layer; // 輔助線圖層
 let wireLayer: Konva.Layer;
 let componentLayer: Konva.Layer;
 let tempLayer: Konva.Layer; // 用於繪製中的導線
@@ -42,6 +43,82 @@ interface PortInfo {
 
 let isWiring = false;
 let wiringStartPort: PortInfo | null = null;
+
+/**
+ * 繪製對齊輔助線
+ */
+function drawGuides(x: number, y: number) {
+  if (!guideLayer || !stage) return;
+  guideLayer.destroyChildren();
+
+  const width = stage.width();
+  const height = stage.height();
+  const gridSize = uiStore.gridSize;
+
+  // 使用半透明白色區塊作為輔助線
+  // 水平輔助帶
+  const hGuide = new Konva.Rect({
+    x: 0,
+    y: y - gridSize / 2,
+    width: width,
+    height: gridSize,
+    fill: '#ffffff',
+    opacity: 0.1, // 低透明度
+    listening: false, // 不接收事件
+  });
+
+  // 垂直輔助帶
+  const vGuide = new Konva.Rect({
+    x: x - gridSize / 2,
+    y: 0,
+    width: gridSize,
+    height: height,
+    fill: '#ffffff',
+    opacity: 0.1, // 低透明度
+    listening: false,
+  });
+
+  guideLayer.add(hGuide, vGuide);
+  guideLayer.batchDraw();
+}
+
+/**
+ * 清除輔助線
+ */
+function clearGuides() {
+  if (!guideLayer) return;
+  guideLayer.destroyChildren();
+  guideLayer.batchDraw();
+}
+
+/**
+ * 計算旋轉後的端點位置
+ * @param componentX 元件中心 X 座標
+ * @param componentY 元件中心 Y 座標
+ * @param offsetX 端點相對於元件中心的 X 偏移
+ * @param offsetY 端點相對於元件中心的 Y 偏移
+ * @param rotation 元件旋轉角度（度）
+ * @returns 旋轉後的全域座標
+ */
+function getRotatedPortPosition(
+  componentX: number,
+  componentY: number,
+  offsetX: number,
+  offsetY: number,
+  rotation: number
+): { x: number; y: number } {
+  // 將角度轉換為弧度
+  const rad = (rotation * Math.PI) / 180;
+  
+  // 旋轉矩陣計算
+  const rotatedX = offsetX * Math.cos(rad) - offsetY * Math.sin(rad);
+  const rotatedY = offsetX * Math.sin(rad) + offsetY * Math.cos(rad);
+  
+  return {
+    x: componentX + rotatedX,
+    y: componentY + rotatedY,
+  };
+}
 
 /**
  * 計算直角走線路徑 (Manhattan Routing)
@@ -610,10 +687,15 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
 
       portShape.on('click tap', (e) => {
         e.cancelBubble = true;
-        // 計算端點的全域座標
-        const portGlobalX = component.x + port.offsetX;
-        const portGlobalY = component.y + port.offsetY;
-        handlePortClick(component.id, port.id, portGlobalX, portGlobalY);
+        // 計算端點的全域座標（考慮旋轉）
+        const portGlobalPos = getRotatedPortPosition(
+          component.x,
+          component.y,
+          port.offsetX,
+          port.offsetY,
+          component.rotation
+        );
+        handlePortClick(component.id, port.id, portGlobalPos.x, portGlobalPos.y);
       });
 
       // hover 效果
@@ -649,6 +731,10 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
     // 臨時更新元件位置以便重繪導線
     const tempX = group.x();
     const tempY = group.y();
+    
+    // 更新輔助線位置
+    drawGuides(tempX, tempY);
+    
     // 更新 store 中的位置 (不觸發 watch)
     const comp = circuitStore.components.find(c => c.id === component.id);
     if (comp) {
@@ -684,6 +770,9 @@ function updateComponentVisuals() {
       
       // 更新游標樣式
       if (comp.selected) {
+        // 選取時繪製輔助線
+        drawGuides(comp.x, comp.y);
+        
         node.on('mouseenter', () => {
           if (!isWiring) document.body.style.cursor = 'move';
         });
@@ -693,7 +782,27 @@ function updateComponentVisuals() {
       } else {
         node.off('mouseenter');
         node.off('mouseleave');
+        // 沒有選取時清除輔助線（如果在遍歷中，可能需要在外部處理，但因為這裡是對forEach，我們可以檢查 selectedComponentId）
       }
+      
+      // 確保先移除可能存在的重複監聽器
+      node.off('dragmove');
+      node.on('dragmove', () => {
+        // 臨時更新元件位置以便重繪導線
+        const tempX = node.x();
+        const tempY = node.y();
+        
+        // 更新輔助線位置
+        drawGuides(tempX, tempY);
+        
+        // 更新 store 中的位置 (不觸發 watch)
+        const component = circuitStore.components.find(c => c.id === comp.id);
+        if (component) {
+          component.x = tempX;
+          component.y = tempY;
+        }
+        renderAllWires();
+      });
       
       // 重新繪製以顯示高亮效果
       node.destroyChildren();
@@ -708,9 +817,14 @@ function updateComponentVisuals() {
 
           portShape.on('click tap', (e) => {
             e.cancelBubble = true;
-            const portGlobalX = comp.x + port.offsetX;
-            const portGlobalY = comp.y + port.offsetY;
-            handlePortClick(comp.id, port.id, portGlobalX, portGlobalY);
+            const portGlobalPos = getRotatedPortPosition(
+              comp.x,
+              comp.y,
+              port.offsetX,
+              port.offsetY,
+              comp.rotation
+            );
+            handlePortClick(comp.id, port.id, portGlobalPos.x, portGlobalPos.y);
           });
 
           portShape.on('mouseenter', () => {
@@ -732,6 +846,12 @@ function updateComponentVisuals() {
       }
     }
   });
+  
+  // 檢查是否有選取的元件，如果沒有則清除輔助線
+  if (!circuitStore.selectedComponentId) {
+    clearGuides();
+  }
+  
   componentLayer?.batchDraw();
 }
 
@@ -755,10 +875,26 @@ function drawWire(wire: Wire): Konva.Group {
     return wireGroup;
   }
 
-  const startX = fromComp.x + fromPort.offsetX;
-  const startY = fromComp.y + fromPort.offsetY;
-  const endX = toComp.x + toPort.offsetX;
-  const endY = toComp.y + toPort.offsetY;
+  // 計算旋轉後的端點位置
+  const startPos = getRotatedPortPosition(
+    fromComp.x,
+    fromComp.y,
+    fromPort.offsetX,
+    fromPort.offsetY,
+    fromComp.rotation
+  );
+  const endPos = getRotatedPortPosition(
+    toComp.x,
+    toComp.y,
+    toPort.offsetX,
+    toPort.offsetY,
+    toComp.rotation
+  );
+
+  const startX = startPos.x;
+  const startY = startPos.y;
+  const endX = endPos.x;
+  const endY = endPos.y;
 
   // 使用直角路徑
   const points = calculateOrthogonalPath(startX, startY, endX, endY);
@@ -868,6 +1004,7 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
     
     circuitStore.selectComponent(null);
     circuitStore.selectWire(null);
+    clearGuides(); // 清除輔助線
     updateComponentVisuals();
     renderAllWires();
     // 恢復預設游標
@@ -887,6 +1024,7 @@ function handleKeyDown(e: KeyboardEvent) {
     }
     circuitStore.selectComponent(null);
     circuitStore.selectWire(null);
+    clearGuides(); // 清除輔助線
     updateComponentVisuals();
     renderAllWires();
     return;
@@ -929,11 +1067,13 @@ onMounted(() => {
 
   // 建立圖層（由下往上）
   gridLayer = new Konva.Layer();
+  guideLayer = new Konva.Layer();
   wireLayer = new Konva.Layer();
   componentLayer = new Konva.Layer();
   tempLayer = new Konva.Layer();
 
   stage.add(gridLayer);
+  stage.add(guideLayer);
   stage.add(wireLayer);
   stage.add(componentLayer);
   stage.add(tempLayer);
