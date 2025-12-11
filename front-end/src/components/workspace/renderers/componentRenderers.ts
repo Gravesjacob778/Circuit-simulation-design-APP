@@ -14,9 +14,9 @@ export function drawResistor(group: Konva.Group, component: CircuitComponent) {
     // 如果選取，添加高亮背景
     if (component.selected) {
         const highlight = new Konva.Rect({
-            x: -35,
+            x: -45,
             y: -15,
-            width: 70,
+            width: 90,
             height: 30,
             fill: 'rgba(76, 175, 80, 0.1)',
             stroke: '#4caf50',
@@ -29,9 +29,9 @@ export function drawResistor(group: Konva.Group, component: CircuitComponent) {
         group.add(highlight);
     }
 
-    // 電阻本體 (鋸齒形狀)
+    // 電阻本體 (鋸齒形狀) - 調整為 4 格長度 (80px)
     const zigzag = new Konva.Line({
-        points: [-30, 0, -20, 0, -15, -8, -5, 8, 5, -8, 15, 8, 20, 0, 30, 0],
+        points: [-40, 0, -25, 0, -20, -8, -10, 8, 0, -8, 10, 8, 20, -8, 25, 0, 40, 0],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: component.selected ? 3 : 2,
         lineCap: 'round',
@@ -41,7 +41,7 @@ export function drawResistor(group: Konva.Group, component: CircuitComponent) {
 
     // 端點
     const port1 = new Konva.Circle({
-        x: -30,
+        x: -40,
         y: 0,
         radius: 4,
         fill: '#4caf50',
@@ -50,7 +50,7 @@ export function drawResistor(group: Konva.Group, component: CircuitComponent) {
         name: 'port',
     });
     const port2 = new Konva.Circle({
-        x: 30,
+        x: 40,
         y: 0,
         radius: 4,
         fill: '#4caf50',
@@ -79,9 +79,9 @@ export function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
     // 如果選取，添加高亮背景
     if (component.selected) {
         const highlight = new Konva.Rect({
-            x: -35,
+            x: -45,
             y: -20,
-            width: 70,
+            width: 90,
             height: 40,
             fill: 'rgba(76, 175, 80, 0.1)',
             stroke: '#4caf50',
@@ -94,9 +94,9 @@ export function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
         group.add(highlight);
     }
 
-    // 左側連線
+    // 左側連線 - 調整為 4 格長度 (80px)
     const line1 = new Konva.Line({
-        points: [-30, 0, -5, 0],
+        points: [-40, 0, -5, 0],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: component.selected ? 3 : 2,
     });
@@ -114,7 +114,7 @@ export function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
     });
     // 右側連線
     const line2 = new Konva.Line({
-        points: [5, 0, 30, 0],
+        points: [5, 0, 40, 0],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: component.selected ? 3 : 2,
     });
@@ -123,14 +123,14 @@ export function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
 
     // 端點
     const port1 = new Konva.Circle({
-        x: -30,
+        x: -40,
         y: 0,
         radius: 4,
         fill: '#ffeb3b',
         name: 'port',
     });
     const port2 = new Konva.Circle({
-        x: 30,
+        x: 40,
         y: 0,
         radius: 4,
         fill: '#ffeb3b',
@@ -199,7 +199,7 @@ export function drawDCSource(group: Konva.Group, component: CircuitComponent) {
         const highlight = new Konva.Circle({
             x: 0,
             y: 0,
-            radius: 40,
+            radius: 50,
             fill: 'rgba(76, 175, 80, 0.1)',
             stroke: '#4caf50',
             strokeWidth: 2,
@@ -239,14 +239,14 @@ export function drawDCSource(group: Konva.Group, component: CircuitComponent) {
         strokeWidth: 2,
     });
 
-    // 連接線
+    // 連接線 - 調整為 4 格長度 (80px)
     const topLine = new Konva.Line({
-        points: [0, -30, 0, -18],
+        points: [0, -40, 0, -18],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: 2,
     });
     const bottomLine = new Konva.Line({
-        points: [0, 18, 0, 30],
+        points: [0, 18, 0, 40],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: 2,
     });
@@ -256,14 +256,14 @@ export function drawDCSource(group: Konva.Group, component: CircuitComponent) {
     // 端點
     const portPlus = new Konva.Circle({
         x: 0,
-        y: -30,
+        y: -40,
         radius: 4,
         fill: '#ff5722',
         name: 'port',
     });
     const portMinus = new Konva.Circle({
         x: 0,
-        y: 30,
+        y: 40,
         radius: 4,
         fill: '#2196f3',
         name: 'port',
@@ -290,7 +290,7 @@ export function drawACSource(group: Konva.Group, component: CircuitComponent) {
         const highlight = new Konva.Circle({
             x: 0,
             y: 0,
-            radius: 40,
+            radius: 50,
             fill: 'rgba(76, 175, 80, 0.1)',
             stroke: '#4caf50',
             strokeWidth: 2,
@@ -319,14 +319,14 @@ export function drawACSource(group: Konva.Group, component: CircuitComponent) {
         tension: 0.5,
     });
 
-    // 連接線
+    // 連接線 - 調整為 4 格長度 (80px)
     const topLine = new Konva.Line({
-        points: [0, -30, 0, -18],
+        points: [0, -40, 0, -18],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: 2,
     });
     const bottomLine = new Konva.Line({
-        points: [0, 18, 0, 30],
+        points: [0, 18, 0, 40],
         stroke: component.selected ? '#4caf50' : '#cccccc',
         strokeWidth: 2,
     });
@@ -336,14 +336,14 @@ export function drawACSource(group: Konva.Group, component: CircuitComponent) {
     // 端點
     const portPlus = new Konva.Circle({
         x: 0,
-        y: -30,
+        y: -40,
         radius: 4,
         fill: '#ab47bc',
         name: 'port',
     });
     const portMinus = new Konva.Circle({
         x: 0,
-        y: 30,
+        y: 40,
         radius: 4,
         fill: '#ab47bc',
         name: 'port',
@@ -368,9 +368,9 @@ export function drawGenericComponent(group: Konva.Group, component: CircuitCompo
     // 如果選取，添加高亮背景
     if (component.selected) {
         const highlight = new Konva.Rect({
-            x: -35,
+            x: -45,
             y: -20,
-            width: 70,
+            width: 90,
             height: 40,
             fill: 'rgba(76, 175, 80, 0.1)',
             stroke: '#4caf50',
@@ -383,10 +383,11 @@ export function drawGenericComponent(group: Konva.Group, component: CircuitCompo
         group.add(highlight);
     }
 
+    // 調整為 4 格長度 (80px)
     const rect = new Konva.Rect({
-        x: -30,
+        x: -40,
         y: -15,
-        width: 60,
+        width: 80,
         height: 30,
         stroke: component.selected ? '#4caf50' : '#666666',
         strokeWidth: component.selected ? 3 : 2,
@@ -406,14 +407,14 @@ export function drawGenericComponent(group: Konva.Group, component: CircuitCompo
 
     // 通用端點
     const port1 = new Konva.Circle({
-        x: -30,
+        x: -40,
         y: 0,
         radius: 4,
         fill: '#4caf50',
         name: 'port',
     });
     const port2 = new Konva.Circle({
-        x: 30,
+        x: 40,
         y: 0,
         radius: 4,
         fill: '#4caf50',

@@ -73,7 +73,7 @@ drawComponentShape(group, component);
 import { getRotatedPortPosition, calculateOrthogonalPath } from '@/lib/geometryUtils';
 
 // 計算旋轉後的端點位置
-const portPos = getRotatedPortPosition(100, 100, 30, 0, 90);
+const portPos = getRotatedPortPosition(100, 100, 40, 0, 90);
 
 // 計算走線路徑
 const path = calculateOrthogonalPath(0, 0, 100, 100, 20, true); // Z 型路徑

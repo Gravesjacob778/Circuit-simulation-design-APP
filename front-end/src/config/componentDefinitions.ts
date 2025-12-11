@@ -13,8 +13,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         defaultValue: 5,
         defaultUnit: 'V',
         ports: [
-            { name: '+', offsetX: 0, offsetY: -30 },
-            { name: '-', offsetX: 0, offsetY: 30 },
+            { name: '+', offsetX: 0, offsetY: -40 },
+            { name: '-', offsetX: 0, offsetY: 40 },
         ],
     },
     {
@@ -24,8 +24,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         defaultValue: 5,
         defaultUnit: 'V',
         ports: [
-            { name: '+', offsetX: 0, offsetY: -30 },
-            { name: '-', offsetX: 0, offsetY: 30 },
+            { name: '+', offsetX: 0, offsetY: -40 },
+            { name: '-', offsetX: 0, offsetY: 40 },
         ],
     },
     // 被動元件
@@ -36,8 +36,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         defaultValue: 1000,
         defaultUnit: 'Ω',
         ports: [
-            { name: '1', offsetX: -30, offsetY: 0 },
-            { name: '2', offsetX: 30, offsetY: 0 },
+            { name: '1', offsetX: -40, offsetY: 0 },
+            { name: '2', offsetX: 40, offsetY: 0 },
         ],
     },
     {
@@ -47,8 +47,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         defaultValue: 100,
         defaultUnit: 'μF',
         ports: [
-            { name: '+', offsetX: -30, offsetY: 0 },
-            { name: '-', offsetX: 30, offsetY: 0 },
+            { name: '+', offsetX: -40, offsetY: 0 },
+            { name: '-', offsetX: 40, offsetY: 0 },
         ],
     },
     {
@@ -58,8 +58,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         defaultValue: 10,
         defaultUnit: 'mH',
         ports: [
-            { name: '1', offsetX: -30, offsetY: 0 },
-            { name: '2', offsetX: 30, offsetY: 0 },
+            { name: '1', offsetX: -40, offsetY: 0 },
+            { name: '2', offsetX: 40, offsetY: 0 },
         ],
     },
     // 接地
@@ -87,8 +87,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         label: 'Diode',
         icon: 'diode',
         ports: [
-            { name: 'anode', offsetX: -30, offsetY: 0 },
-            { name: 'cathode', offsetX: 30, offsetY: 0 },
+            { name: 'anode', offsetX: -40, offsetY: 0 },
+            { name: 'cathode', offsetX: 40, offsetY: 0 },
         ],
     },
     {
@@ -96,8 +96,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         label: 'LED',
         icon: 'led',
         ports: [
-            { name: 'anode', offsetX: -30, offsetY: 0 },
-            { name: 'cathode', offsetX: 30, offsetY: 0 },
+            { name: 'anode', offsetX: -40, offsetY: 0 },
+            { name: 'cathode', offsetX: 40, offsetY: 0 },
         ],
     },
     {
@@ -126,8 +126,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         label: 'Switch',
         icon: 'switch',
         ports: [
-            { name: '1', offsetX: -30, offsetY: 0 },
-            { name: '2', offsetX: 30, offsetY: 0 },
+            { name: '1', offsetX: -40, offsetY: 0 },
+            { name: '2', offsetX: 40, offsetY: 0 },
         ],
     },
     // 測量儀器
@@ -136,8 +136,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         label: 'Ammeter',
         icon: 'ammeter',
         ports: [
-            { name: '+', offsetX: -30, offsetY: 0 },
-            { name: '-', offsetX: 30, offsetY: 0 },
+            { name: '+', offsetX: -40, offsetY: 0 },
+            { name: '-', offsetX: 40, offsetY: 0 },
         ],
     },
     {
@@ -145,8 +145,8 @@ export const componentDefinitions: ComponentDefinition[] = [
         label: 'Voltmeter',
         icon: 'voltmeter',
         ports: [
-            { name: '+', offsetX: -30, offsetY: 0 },
-            { name: '-', offsetX: 30, offsetY: 0 },
+            { name: '+', offsetX: -40, offsetY: 0 },
+            { name: '-', offsetX: 40, offsetY: 0 },
         ],
     },
 ];

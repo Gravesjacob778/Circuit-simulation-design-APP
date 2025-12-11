@@ -100,7 +100,9 @@ function buildCostGrid(ctx: RoutingContext): Map<string, number> {
     const { gridSize, obstacles, existingWires, overlapPenalty } = ctx;
 
     for (const obs of obstacles) {
-        const inflated = inflateBoundingBox(obs, gridSize / 2);
+        // 膨脹障礙物邊界，讓路徑與元件保持足夠距離
+        const clearanceMargin = gridSize;
+        const inflated = inflateBoundingBox(obs, clearanceMargin);
         for (let x = snapToGrid(inflated.minX, gridSize); x <= inflated.maxX; x += gridSize) {
             for (let y = snapToGrid(inflated.minY, gridSize); y <= inflated.maxY; y += gridSize) {
                 costMap.set(`${x},${y}`, Infinity);
@@ -131,6 +133,16 @@ function buildCostGrid(ctx: RoutingContext): Map<string, number> {
 
 // ============= A* 正交尋路 =============
 
+/**
+ * 計算是否為回頭（U-turn）
+ */
+function isReverseDirection(from: Direction, to: Direction): boolean {
+    return (from === 'N' && to === 'S') ||
+        (from === 'S' && to === 'N') ||
+        (from === 'E' && to === 'W') ||
+        (from === 'W' && to === 'E');
+}
+
 function aStarOrthogonal(
     start: Point,
     end: Point,
@@ -142,7 +154,8 @@ function aStarOrthogonal(
     const costGrid = buildCostGrid(ctx);
 
     const openSet: PathNode[] = [];
-    const closedSet = new Set<string>();
+    // 狀態空間擴充為 (x, y, dir)，防止從同一格子用不同方向重複探索
+    const visited = new Map<string, number>(); // key: "x,y,dir" => best g cost
 
     const startNode: PathNode = {
         x: snapToGrid(start.x, gridSize),
@@ -166,53 +179,79 @@ function aStarOrthogonal(
         { dir: 'W', dx: -gridSize, dy: 0 }
     ];
 
+    // 回頭懲罰（U-turn）比普通轉彎更高
+    const reversePenalty = turnPenalty * 5;
+
     let iterations = 0;
-    const maxIterations = 1000;
+    const maxIterations = 2000; // 增加迭代上限以找到更優路徑
 
     while (openSet.length > 0 && iterations < maxIterations) {
         iterations++;
 
         openSet.sort((a, b) => a.f - b.f);
         const current = openSet.shift()!;
-        const currentKey = `${current.x},${current.y}`;
+
+        // 使用 (x, y, dir) 作為狀態 key
+        const currentStateKey = `${current.x},${current.y},${current.direction}`;
 
         if (current.x === endX && current.y === endY) {
             return reconstructPath(current);
         }
 
-        closedSet.add(currentKey);
+        // 如果已有更好的路徑到達這個狀態，跳過
+        const existingCost = visited.get(currentStateKey);
+        if (existingCost !== undefined && existingCost <= current.g) {
+            continue;
+        }
+        visited.set(currentStateKey, current.g);
 
         for (const { dir, dx, dy } of directions) {
             const nx = current.x + dx;
             const ny = current.y + dy;
-            const neighborKey = `${nx},${ny}`;
 
             if (nx < 0 || nx > canvasWidth || ny < 0 || ny > canvasHeight) continue;
-            if (closedSet.has(neighborKey)) continue;
 
-            const cellCost = costGrid.get(neighborKey) ?? 0;
+            const cellCost = costGrid.get(`${nx},${ny}`) ?? 0;
             if (cellCost === Infinity) continue;
 
             let moveCost = gridSize + cellCost;
 
+            // 轉彎懲罰
             if (current.direction !== 'NONE' && current.direction !== dir) {
-                moveCost += turnPenalty * gridSize;
-            }
-
-            if (current.parent === null && startDir !== 'NONE' && dir !== startDir) {
-                moveCost += turnPenalty * gridSize;
-            }
-
-            if (nx === endX && ny === endY && endDir !== 'NONE') {
-                const requiredApproach = oppositeDirection(endDir);
-                if (dir !== requiredApproach) {
+                // 回頭（U-turn）懲罰更高
+                if (isReverseDirection(current.direction, dir)) {
+                    moveCost += reversePenalty * gridSize;
+                } else {
                     moveCost += turnPenalty * gridSize;
                 }
             }
 
-            const tentativeG = current.g + moveCost;
+            // 起點方向限制
+            if (current.parent === null && startDir !== 'NONE' && dir !== startDir) {
+                moveCost += turnPenalty * gridSize * 2;
+            }
 
-            const existingIndex = openSet.findIndex(n => n.x === nx && n.y === ny);
+            // 終點進入方向限制
+            if (nx === endX && ny === endY && endDir !== 'NONE') {
+                const requiredApproach = oppositeDirection(endDir);
+                if (dir !== requiredApproach) {
+                    moveCost += turnPenalty * gridSize * 2;
+                }
+            }
+
+            const tentativeG = current.g + moveCost;
+            const neighborStateKey = `${nx},${ny},${dir}`;
+
+            // 檢查是否已有更好的路徑到達這個狀態
+            const existingNeighborCost = visited.get(neighborStateKey);
+            if (existingNeighborCost !== undefined && existingNeighborCost <= tentativeG) {
+                continue;
+            }
+
+            // 檢查 openSet 中是否有相同狀態且成本更低
+            const existingIndex = openSet.findIndex(n =>
+                n.x === nx && n.y === ny && n.direction === dir
+            );
             if (existingIndex !== -1) {
                 const existingNode = openSet[existingIndex];
                 if (existingNode && tentativeG >= existingNode.g) continue;
@@ -252,15 +291,19 @@ function reconstructPath(node: PathNode): Point[] {
 function simplifyPath(path: Point[]): Point[] {
     if (path.length <= 2) return path;
 
-    const first = path[0];
-    if (!first) return path;
+    // 第一步：移除回路（如果同一座標出現兩次，移除中間的迴圈）
+    let loopRemoved = removeLoops(path);
+
+    // 第二步：合併共線段
+    const first = loopRemoved[0];
+    if (!first) return loopRemoved;
 
     const simplified: Point[] = [first];
 
-    for (let i = 1; i < path.length - 1; i++) {
+    for (let i = 1; i < loopRemoved.length - 1; i++) {
         const prev = simplified[simplified.length - 1];
-        const curr = path[i];
-        const next = path[i + 1];
+        const curr = loopRemoved[i];
+        const next = loopRemoved[i + 1];
 
         if (!prev || !curr || !next) continue;
 
@@ -272,11 +315,45 @@ function simplifyPath(path: Point[]): Point[] {
         }
     }
 
-    const last = path[path.length - 1];
+    const last = loopRemoved[loopRemoved.length - 1];
     if (last) {
         simplified.push(last);
     }
     return simplified;
+}
+
+/**
+ * 移除路徑中的回路
+ * 如果同一座標出現兩次，移除中間形成的迴圈
+ */
+function removeLoops(path: Point[]): Point[] {
+    const seen = new Map<string, number>(); // key => index in result
+    const result: Point[] = [];
+
+    for (let i = 0; i < path.length; i++) {
+        const point = path[i];
+        if (!point) continue;
+
+        const key = `${point.x},${point.y}`;
+
+        if (seen.has(key)) {
+            // 發現回路：移除從 seen[key]+1 到當前位置之前的所有點
+            const loopStartIndex = seen.get(key)!;
+            // 截斷 result 到回路起點（包含）
+            result.length = loopStartIndex + 1;
+            // 重建 seen map
+            seen.clear();
+            for (let j = 0; j < result.length; j++) {
+                const p = result[j];
+                if (p) seen.set(`${p.x},${p.y}`, j);
+            }
+        } else {
+            seen.set(key, result.length);
+            result.push(point);
+        }
+    }
+
+    return result;
 }
 
 function fallbackLPath(start: Point, end: Point, gridSize: number): Point[] {
@@ -556,24 +633,48 @@ export function smartOrthogonalRoute(
         : 'NONE' as Direction;
 
     // 計算延伸點 - 線路必須從端點沿著正確方向先延伸一段距離
-    const extensionDistance = gridSize;
-    const startExtPoint = startDir !== 'NONE'
-        ? getExtensionPoint(startX, startY, startDir, extensionDistance)
-        : { x: startX, y: startY };
-    const endExtPoint = endDir !== 'NONE'
-        ? getExtensionPoint(endX, endY, endDir, extensionDistance)
-        : { x: endX, y: endY };
+    const extensionDistance = gridSize * 2; // 增加延伸距離確保方向正確
 
-    // 對齊到網格
-    startExtPoint.x = snapToGrid(startExtPoint.x, gridSize);
-    startExtPoint.y = snapToGrid(startExtPoint.y, gridSize);
-    endExtPoint.x = snapToGrid(endExtPoint.x, gridSize);
-    endExtPoint.y = snapToGrid(endExtPoint.y, gridSize);
+    // 計算起點延伸點（不做 snapToGrid 以保持方向正確）
+    let startExtX = startX;
+    let startExtY = startY;
+    if (startDir === 'N') {
+        startExtY = startY - extensionDistance;
+    } else if (startDir === 'S') {
+        startExtY = startY + extensionDistance;
+    } else if (startDir === 'E') {
+        startExtX = startX + extensionDistance;
+    } else if (startDir === 'W') {
+        startExtX = startX - extensionDistance;
+    }
+
+    // 計算終點延伸點
+    let endExtX = endX;
+    let endExtY = endY;
+    if (endDir === 'N') {
+        endExtY = endY - extensionDistance;
+    } else if (endDir === 'S') {
+        endExtY = endY + extensionDistance;
+    } else if (endDir === 'E') {
+        endExtX = endX + extensionDistance;
+    } else if (endDir === 'W') {
+        endExtX = endX - extensionDistance;
+    }
+
+    // 對齊延伸點到網格（用於 A* 路徑規劃）
+    const startExtPointSnapped = {
+        x: snapToGrid(startExtX, gridSize),
+        y: snapToGrid(startExtY, gridSize)
+    };
+    const endExtPointSnapped = {
+        x: snapToGrid(endExtX, gridSize),
+        y: snapToGrid(endExtY, gridSize)
+    };
 
     // 從延伸點開始進行 A* 路徑規劃
     let path = aStarOrthogonal(
-        startExtPoint,
-        endExtPoint,
+        startExtPointSnapped,
+        endExtPointSnapped,
         ctx,
         startDir,
         oppositeDirection(endDir)
@@ -582,21 +683,25 @@ export function smartOrthogonalRoute(
     path = simplifyPath(path);
     path = assignLane(path, existingWireSegments, gridSize);
 
-    // 組裝最終路徑：起點 -> 延伸點 -> A* 路徑 -> 延伸點 -> 終點
+    // 組裝最終路徑
     const points: number[] = [];
 
-    // 始終從實際起點開始
+    // 1. 始終從實際起點開始
     points.push(startX, startY);
 
-    // 如果有延伸點且與起點不同，加入延伸點
-    if (startDir !== 'NONE' && (startExtPoint.x !== startX || startExtPoint.y !== startY)) {
-        // 避免重複加入與 A* 路徑第一個點相同的點
-        if (path.length > 0 && path[0] && (path[0].x !== startExtPoint.x || path[0].y !== startExtPoint.y)) {
-            points.push(startExtPoint.x, startExtPoint.y);
+    // 2. 強制加入起點延伸點（確保從正確方向出發）
+    if (startDir !== 'NONE') {
+        // 確保延伸點與起點形成正確方向的線段
+        if (startDir === 'N' || startDir === 'S') {
+            // 垂直方向：X 保持與起點相同
+            points.push(startX, startExtPointSnapped.y);
+        } else {
+            // 水平方向：Y 保持與起點相同
+            points.push(startExtPointSnapped.x, startY);
         }
     }
 
-    // 加入 A* 計算的路徑（跳過第一個點，因為它是延伸點）
+    // 3. 加入 A* 計算的路徑
     for (let i = 0; i < path.length; i++) {
         const p = path[i];
         if (!p) continue;
@@ -609,19 +714,28 @@ export function smartOrthogonalRoute(
         points.push(p.x, p.y);
     }
 
-    // 如果有結束延伸點且與終點不同，確保經過延伸點
-    if (endDir !== 'NONE' && (endExtPoint.x !== endX || endExtPoint.y !== endY)) {
+    // 4. 強制加入終點延伸點（確保從正確方向進入）
+    if (endDir !== 'NONE') {
         const lastX = points[points.length - 2];
         const lastY = points[points.length - 1];
-        if (lastX !== endExtPoint.x || lastY !== endExtPoint.y) {
-            points.push(endExtPoint.x, endExtPoint.y);
+
+        if (endDir === 'N' || endDir === 'S') {
+            // 垂直方向進入：X 保持與終點相同
+            if (lastX !== endX || lastY !== endExtPointSnapped.y) {
+                points.push(endX, endExtPointSnapped.y);
+            }
+        } else {
+            // 水平方向進入：Y 保持與終點相同
+            if (lastX !== endExtPointSnapped.x || lastY !== endY) {
+                points.push(endExtPointSnapped.x, endY);
+            }
         }
     }
 
-    // 確保以實際終點結束
-    const lastX = points[points.length - 2];
-    const lastY = points[points.length - 1];
-    if (lastX !== endX || lastY !== endY) {
+    // 5. 確保以實際終點結束
+    const finalLastX = points[points.length - 2];
+    const finalLastY = points[points.length - 1];
+    if (finalLastX !== endX || finalLastY !== endY) {
         points.push(endX, endY);
     }
 
