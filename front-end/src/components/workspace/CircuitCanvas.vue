@@ -188,12 +188,62 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
     isWiring = true;
     wiringStartPort = { componentId, portId, x: portX, y: portY };
     console.log('開始接線:', wiringStartPort);
+    
+    // 立即顯示起點標記，提供視覺回饋
+    if (!tempLayer) return;
+    tempLayer.destroyChildren();
+    
+    // 繪製起點圓點（較大且帶動畫效果）
+    const startDot = new Konva.Circle({
+      x: portX,
+      y: portY,
+      radius: 8,
+      fill: '#ffeb3b',
+      stroke: '#fff',
+      strokeWidth: 2,
+      shadowColor: '#ffeb3b',
+      shadowBlur: 10,
+      shadowOpacity: 0.8,
+    });
+    
+    // 添加脈衝動畫效果
+    const pulseAnimation = new Konva.Animation((frame) => {
+      if (!frame) return;
+      const scale = 1 + Math.sin(frame.time * 0.005) * 0.2;
+      startDot.scale({ x: scale, y: scale });
+    }, tempLayer);
+    pulseAnimation.start();
+    
+    // 添加提示文字
+    const hintText = new Konva.Text({
+      x: portX + 15,
+      y: portY - 10,
+      text: '點擊目標端點完成連接',
+      fontSize: 12,
+      fill: '#ffeb3b',
+      shadowColor: '#000',
+      shadowBlur: 4,
+      shadowOpacity: 0.8,
+    });
+    
+    tempLayer.add(startDot, hintText);
+    tempLayer.batchDraw();
+    
+    // 儲存動畫引用以便後續清除
+    (tempLayer as any)._pulseAnimation = pulseAnimation;
+    
   } else if (wiringStartPort) {
     // 結束接線 - 不能連接到同一個端點
     if (wiringStartPort.componentId === componentId && wiringStartPort.portId === portId) {
       // 點擊同一個端點，取消接線
       isWiring = false;
       wiringStartPort = null;
+      
+      // 停止動畫
+      if ((tempLayer as any)._pulseAnimation) {
+        (tempLayer as any)._pulseAnimation.stop();
+        (tempLayer as any)._pulseAnimation = null;
+      }
       clearTempLayer();
       return;
     }
@@ -210,6 +260,12 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
     // 重置接線狀態
     isWiring = false;
     wiringStartPort = null;
+    
+    // 停止動畫
+    if ((tempLayer as any)._pulseAnimation) {
+      (tempLayer as any)._pulseAnimation.stop();
+      (tempLayer as any)._pulseAnimation = null;
+    }
     clearTempLayer();
   }
 }
@@ -307,9 +363,9 @@ function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
   // 如果選取，添加高亮背景
   if (component.selected) {
     const highlight = new Konva.Rect({
-      x: -25,
+      x: -35,
       y: -20,
-      width: 50,
+      width: 70,
       height: 40,
       fill: 'rgba(76, 175, 80, 0.1)',
       stroke: '#4caf50',
@@ -324,7 +380,7 @@ function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
 
   // 左側連線
   const line1 = new Konva.Line({
-    points: [-20, 0, -5, 0],
+    points: [-30, 0, -5, 0],
     stroke: component.selected ? '#4caf50' : '#cccccc',
     strokeWidth: component.selected ? 3 : 2,
   });
@@ -342,7 +398,7 @@ function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
   });
   // 右側連線
   const line2 = new Konva.Line({
-    points: [5, 0, 20, 0],
+    points: [5, 0, 30, 0],
     stroke: component.selected ? '#4caf50' : '#cccccc',
     strokeWidth: component.selected ? 3 : 2,
   });
@@ -351,14 +407,14 @@ function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
 
   // 端點
   const port1 = new Konva.Circle({
-    x: -20,
+    x: -30,
     y: 0,
     radius: 4,
     fill: '#ffeb3b',
     name: 'port',
   });
   const port2 = new Konva.Circle({
-    x: 20,
+    x: 30,
     y: 0,
     radius: 4,
     fill: '#ffeb3b',
@@ -588,9 +644,9 @@ function drawGenericComponent(group: Konva.Group, component: CircuitComponent) {
   // 如果選取，添加高亮背景
   if (component.selected) {
     const highlight = new Konva.Rect({
-      x: -30,
+      x: -35,
       y: -20,
-      width: 60,
+      width: 70,
       height: 40,
       fill: 'rgba(76, 175, 80, 0.1)',
       stroke: '#4caf50',
@@ -604,9 +660,9 @@ function drawGenericComponent(group: Konva.Group, component: CircuitComponent) {
   }
 
   const rect = new Konva.Rect({
-    x: -25,
+    x: -30,
     y: -15,
-    width: 50,
+    width: 60,
     height: 30,
     stroke: component.selected ? '#4caf50' : '#666666',
     strokeWidth: component.selected ? 3 : 2,
@@ -626,14 +682,14 @@ function drawGenericComponent(group: Konva.Group, component: CircuitComponent) {
 
   // 通用端點
   const port1 = new Konva.Circle({
-    x: -25,
+    x: -30,
     y: 0,
     radius: 4,
     fill: '#4caf50',
     name: 'port',
   });
   const port2 = new Konva.Circle({
-    x: 25,
+    x: 30,
     y: 0,
     radius: 4,
     fill: '#4caf50',
@@ -700,17 +756,41 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
 
       // hover 效果
       portShape.on('mouseenter', () => {
-        (portShape as Konva.Circle).radius(6);
-        (portShape as Konva.Circle).stroke('#ffeb3b');
-        (portShape as Konva.Circle).strokeWidth(2);
+        // 在接線模式下，高亮可連接的端點
+        if (isWiring && wiringStartPort) {
+          // 不能連接到同一個端點
+          const isSamePort = wiringStartPort.componentId === component.id && wiringStartPort.portId === port.id;
+          
+          if (isSamePort) {
+            // 同一個端點顯示紅色（不可連接）
+            (portShape as Konva.Circle).radius(6);
+            (portShape as Konva.Circle).stroke('#f44336');
+            (portShape as Konva.Circle).strokeWidth(2);
+            document.body.style.cursor = 'not-allowed';
+          } else {
+            // 可連接的端點顯示綠色
+            (portShape as Konva.Circle).radius(7);
+            (portShape as Konva.Circle).stroke('#4caf50');
+            (portShape as Konva.Circle).strokeWidth(3);
+            (portShape as Konva.Circle).shadowColor('#4caf50');
+            (portShape as Konva.Circle).shadowBlur(10);
+            document.body.style.cursor = 'pointer';
+          }
+        } else {
+          // 非接線模式的正常 hover 效果
+          (portShape as Konva.Circle).radius(6);
+          (portShape as Konva.Circle).stroke('#ffeb3b');
+          (portShape as Konva.Circle).strokeWidth(2);
+          document.body.style.cursor = 'pointer';
+        }
         componentLayer?.batchDraw();
-        document.body.style.cursor = 'pointer';
       });
 
       portShape.on('mouseleave', () => {
         (portShape as Konva.Circle).radius(4);
         (portShape as Konva.Circle).stroke((portShape as Konva.Circle).fill() as string);
         (portShape as Konva.Circle).strokeWidth(1);
+        (portShape as Konva.Circle).shadowBlur(0);
         componentLayer?.batchDraw();
         document.body.style.cursor = 'crosshair';
       });
@@ -828,17 +908,41 @@ function updateComponentVisuals() {
           });
 
           portShape.on('mouseenter', () => {
-            (portShape as Konva.Circle).radius(6);
-            (portShape as Konva.Circle).stroke('#ffeb3b');
-            (portShape as Konva.Circle).strokeWidth(2);
+            // 在接線模式下，高亮可連接的端點
+            if (isWiring && wiringStartPort) {
+              // 不能連接到同一個端點
+              const isSamePort = wiringStartPort.componentId === comp.id && wiringStartPort.portId === port.id;
+              
+              if (isSamePort) {
+                // 同一個端點顯示紅色（不可連接）
+                (portShape as Konva.Circle).radius(6);
+                (portShape as Konva.Circle).stroke('#f44336');
+                (portShape as Konva.Circle).strokeWidth(2);
+                document.body.style.cursor = 'not-allowed';
+              } else {
+                // 可連接的端點顯示綠色
+                (portShape as Konva.Circle).radius(7);
+                (portShape as Konva.Circle).stroke('#4caf50');
+                (portShape as Konva.Circle).strokeWidth(3);
+                (portShape as Konva.Circle).shadowColor('#4caf50');
+                (portShape as Konva.Circle).shadowBlur(10);
+                document.body.style.cursor = 'pointer';
+              }
+            } else {
+              // 非接線模式的正常 hover 效果
+              (portShape as Konva.Circle).radius(6);
+              (portShape as Konva.Circle).stroke('#ffeb3b');
+              (portShape as Konva.Circle).strokeWidth(2);
+              document.body.style.cursor = 'pointer';
+            }
             componentLayer?.batchDraw();
-            document.body.style.cursor = 'pointer';
           });
 
           portShape.on('mouseleave', () => {
             (portShape as Konva.Circle).radius(4);
             (portShape as Konva.Circle).stroke((portShape as Konva.Circle).fill() as string);
             (portShape as Konva.Circle).strokeWidth(1);
+            (portShape as Konva.Circle).shadowBlur(0);
             componentLayer?.batchDraw();
             document.body.style.cursor = comp.selected ? 'move' : 'crosshair';
           });
@@ -998,6 +1102,12 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
     if (isWiring) {
       isWiring = false;
       wiringStartPort = null;
+      
+      // 停止動畫
+      if ((tempLayer as any)._pulseAnimation) {
+        (tempLayer as any)._pulseAnimation.stop();
+        (tempLayer as any)._pulseAnimation = null;
+      }
       clearTempLayer();
       return;
     }
@@ -1019,6 +1129,12 @@ function handleKeyDown(e: KeyboardEvent) {
     if (isWiring) {
       isWiring = false;
       wiringStartPort = null;
+      
+      // 停止動畫
+      if ((tempLayer as any)._pulseAnimation) {
+        (tempLayer as any)._pulseAnimation.stop();
+        (tempLayer as any)._pulseAnimation = null;
+      }
       clearTempLayer();
       return;
     }
