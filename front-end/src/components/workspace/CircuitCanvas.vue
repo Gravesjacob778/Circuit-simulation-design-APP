@@ -8,7 +8,6 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import Konva from 'konva';
 import { useCircuitStore } from '@/stores/circuitStore';
 import { useUIStore } from '@/stores/uiStore';
-import { getComponentDefinition } from '@/config/componentDefinitions';
 import type { CircuitComponent, ComponentType, Wire } from '@/types/circuit';
 
 const circuitStore = useCircuitStore();

@@ -95,7 +95,7 @@ export const useCircuitStore = defineStore('circuit', () => {
     function undo() {
         if (historyIndex.value > 0) {
             historyIndex.value--;
-            const snapshot = JSON.parse(history.value[historyIndex.value]);
+            const snapshot = JSON.parse(history.value[historyIndex.value]!);
             components.value = snapshot.components;
             wires.value = snapshot.wires;
 
@@ -111,7 +111,7 @@ export const useCircuitStore = defineStore('circuit', () => {
     function redo() {
         if (historyIndex.value < history.value.length - 1) {
             historyIndex.value++;
-            const snapshot = JSON.parse(history.value[historyIndex.value]);
+            const snapshot = JSON.parse(history.value[historyIndex.value]!);
             components.value = snapshot.components;
             wires.value = snapshot.wires;
 
