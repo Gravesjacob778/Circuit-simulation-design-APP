@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { ComponentType } from '@/types/circuit';
+import { snapPosition as snapToGridPosition } from '@/lib/gridUtils';
 
 export type ToolMode = 'select' | 'wire' | 'pan' | 'zoom';
 
@@ -119,13 +120,7 @@ export const useUIStore = defineStore('ui', () => {
      * 將座標吸附到網格
      */
     function snapPosition(x: number, y: number): { x: number; y: number } {
-        if (!snapToGrid.value) {
-            return { x, y };
-        }
-        return {
-            x: Math.round(x / gridSize.value) * gridSize.value,
-            y: Math.round(y / gridSize.value) * gridSize.value,
-        };
+        return snapToGridPosition(x, y, gridSize.value, snapToGrid.value);
     }
 
     return {

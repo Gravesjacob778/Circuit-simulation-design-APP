@@ -8,10 +8,13 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import Konva from 'konva';
 import { useCircuitStore } from '@/stores/circuitStore';
 import { useUIStore } from '@/stores/uiStore';
-import type { CircuitComponent, ComponentType, Wire } from '@/types/circuit';
+import type { CircuitComponent, ComponentType } from '@/types/circuit';
 import { drawComponentShape } from './renderers/componentRenderers';
 import { getRotatedPortPosition, calculateOrthogonalPath } from '@/lib/geometryUtils';
-import { smartOrthogonalRoute, buildExistingWireSegments } from '@/lib/smartRouter';
+import { KonvaStage } from '@/utils/KonvaStage';
+import { KonvaNodeManager } from '@/utils/KonvaNodeManager';
+import { KonvaRenderer } from '@/utils/KonvaRenderer';
+import { WiringStateManager } from '@/utils/WiringStateManager';
 
 const circuitStore = useCircuitStore();
 const uiStore = useUIStore();
@@ -24,32 +27,23 @@ const isCanvasEmpty = computed(() => {
 });
 
 // Konva 實例
-let stage: Konva.Stage;
-let gridLayer: Konva.Layer;
-let guideLayer: Konva.Layer; // 輔助線圖層
-let wireLayer: Konva.Layer;
-let componentLayer: Konva.Layer;
-let tempLayer: Konva.Layer; // 用於繪製中的導線
+let konvaStage: KonvaStage | null = null;
+let nodeManager: KonvaNodeManager | null = null;
+let wiringStateManager: WiringStateManager | null = null;
+let renderer: KonvaRenderer | null = null;
 
-// 元件 Konva 節點映射
-const componentNodes = new Map<string, Konva.Group>();
-const wireNodes = new Map<string, Konva.Group>();
+// 層級變數 (通過 konvaStage 獲取)
+let stage: Konva.Stage | null = null;
+let gridLayer: Konva.Layer | null = null;
+let guideLayer: Konva.Layer | null = null; // 輔助線圖層
+let wireLayer: Konva.Layer | null = null;
+let componentLayer: Konva.Layer | null = null;
+let tempLayer: Konva.Layer | null = null; // 用於繪製中的導線
 
 // ========== 電流動畫相關 ==========
-let currentFlowLayer: Konva.Layer;
+let currentFlowLayer: Konva.Layer | null = null;
 let currentFlowAnimation: Konva.Animation | null = null;
 const currentFlowParticles: Konva.Circle[] = [];
-
-// ========== 接線互動狀態 ==========
-interface PortInfo {
-  componentId: string;
-  portId: string;
-  x: number;
-  y: number;
-}
-
-let isWiring = false;
-let wiringStartPort: PortInfo | null = null;
 
 /**
  * 繪製對齊輔助線
@@ -102,11 +96,14 @@ function clearGuides() {
  * 繪製臨時接線預覽
  */
 function drawWiringPreview(targetX: number, targetY: number) {
-  if (!tempLayer || !wiringStartPort) return;
+  if (!tempLayer || !wiringStateManager?.getStartPort()) return;
   tempLayer.destroyChildren();
 
+  const startPort = wiringStateManager.getStartPort();
+  if (!startPort) return;
+
   const points = calculateOrthogonalPath(
-    wiringStartPort.x, wiringStartPort.y,
+    startPort.x, startPort.y,
     targetX, targetY,
     uiStore.gridSize
   );
@@ -122,8 +119,8 @@ function drawWiringPreview(targetX: number, targetY: number) {
 
   // 起點圓點
   const startDot = new Konva.Circle({
-    x: wiringStartPort.x,
-    y: wiringStartPort.y,
+    x: startPort.x,
+    y: startPort.y,
     radius: 6,
     fill: '#ffeb3b',
   });
@@ -145,11 +142,10 @@ function clearTempLayer() {
  * 處理端點點擊 - 開始或完成接線
  */
 function handlePortClick(componentId: string, portId: string, portX: number, portY: number) {
-  if (!isWiring) {
+  if (!wiringStateManager?.isInWiringMode()) {
     // 開始接線
-    isWiring = true;
-    wiringStartPort = { componentId, portId, x: portX, y: portY };
-    console.log('開始接線:', wiringStartPort);
+    wiringStateManager?.startWiring({ componentId, portId, x: portX, y: portY });
+    console.log('開始接線:', wiringStateManager?.getStartPort());
     
     // 立即顯示起點標記，提供視覺回饋
     if (!tempLayer) return;
@@ -194,12 +190,11 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
     // 儲存動畫引用以便後續清除
     (tempLayer as any)._pulseAnimation = pulseAnimation;
     
-  } else if (wiringStartPort) {
+  } else if (wiringStateManager?.getStartPort()) {
     // 結束接線 - 不能連接到同一個端點
-    if (wiringStartPort.componentId === componentId && wiringStartPort.portId === portId) {
+    if (wiringStateManager.isSamePort(componentId, portId)) {
       // 點擊同一個端點，取消接線
-      isWiring = false;
-      wiringStartPort = null;
+      wiringStateManager.cancelWiring();
       
       // 停止動畫
       if ((tempLayer as any)._pulseAnimation) {
@@ -211,17 +206,19 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
     }
 
     // 建立導線
+    const startPort = wiringStateManager.getStartPort();
+    if (!startPort) return;
+    
     console.log('結束接線:', { componentId, portId });
     circuitStore.addWire(
-      wiringStartPort.componentId,
-      wiringStartPort.portId,
+      startPort.componentId,
+      startPort.portId,
       componentId,
       portId
     );
 
     // 重置接線狀態
-    isWiring = false;
-    wiringStartPort = null;
+    wiringStateManager.endWiring();
     
     // 停止動畫
     if ((tempLayer as any)._pulseAnimation) {
@@ -272,7 +269,7 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
     x: component.x,
     y: component.y,
     rotation: component.rotation,
-    draggable: component.selected && !isWiring, // 只有選取且非接線模式才能拖曳
+    draggable: component.selected && !wiringStateManager?.isInWiringMode(), // 只有選取且非接線模式才能拖曳
     id: component.id,
   });
 
@@ -302,9 +299,9 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
       // hover 效果
       portShape.on('mouseenter', () => {
         // 在接線模式下，高亮可連接的端點
-        if (isWiring && wiringStartPort) {
+        if (wiringStateManager?.isInWiringMode()) {
           // 不能連接到同一個端點
-          const isSamePort = wiringStartPort.componentId === component.id && wiringStartPort.portId === port.id;
+          const isSamePort = wiringStateManager.isSamePort(component.id, port.id);
           
           if (isSamePort) {
             // 同一個端點顯示紅色（不可連接）
@@ -374,11 +371,7 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
   group.on('click tap', (e) => {
     // 如果點擊的是端點，不處理
     if ((e.target as Konva.Node).name() === 'port') return;
-    if (isWiring) return; // 接線模式不選取
-    
-    e.cancelBubble = true;
-    circuitStore.selectComponent(component.id);
-    updateComponentVisuals();
+      if (wiringStateManager?.isInWiringMode()) return; // 接線模式不選取
     // 滑鼠游標改為移動游標
     document.body.style.cursor = 'move';
   });
@@ -389,10 +382,10 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
 // 更新元件視覺（選取狀態）
 function updateComponentVisuals() {
   circuitStore.components.forEach((comp) => {
-    const node = componentNodes.get(comp.id);
+    const node = nodeManager?.getComponentNode(comp.id);
     if (node) {
       // 更新拖拉狀態：只有選取的元件才能拖拉
-      node.draggable(comp.selected && !isWiring);
+      node.draggable(comp.selected && !wiringStateManager?.isInWiringMode());
       
       // 更新游標樣式
       if (comp.selected) {
@@ -400,7 +393,7 @@ function updateComponentVisuals() {
         drawGuides(comp.x, comp.y);
         
         node.on('mouseenter', () => {
-          if (!isWiring) document.body.style.cursor = 'move';
+          if (!wiringStateManager?.isInWiringMode()) document.body.style.cursor = 'move';
         });
         node.on('mouseleave', () => {
           document.body.style.cursor = 'crosshair';
@@ -456,9 +449,9 @@ function updateComponentVisuals() {
 
           portShape.on('mouseenter', () => {
             // 在接線模式下，高亮可連接的端點
-            if (isWiring && wiringStartPort) {
+            if (wiringStateManager?.isInWiringMode()) {
               // 不能連接到同一個端點
-              const isSamePort = wiringStartPort.componentId === comp.id && wiringStartPort.portId === port.id;
+              const isSamePort = wiringStateManager.isSamePort(comp.id, port.id);
               
               if (isSamePort) {
                 // 同一個端點顯示紅色（不可連接）
@@ -506,141 +499,33 @@ function updateComponentVisuals() {
   componentLayer?.batchDraw();
 }
 
-// 繪製導線 (使用智慧路由)
-function drawWire(wire: Wire): Konva.Group {
-  const wireGroup = new Konva.Group({ id: wire.id });
-  
-  const fromComp = circuitStore.components.find((c) => c.id === wire.fromComponentId);
-  const toComp = circuitStore.components.find((c) => c.id === wire.toComponentId);
-
-  if (!fromComp || !toComp) {
-    console.warn('Wire references non-existent component');
-    return wireGroup;
-  }
-
-  const fromPort = fromComp.ports.find((p) => p.id === wire.fromPortId);
-  const toPort = toComp.ports.find((p) => p.id === wire.toPortId);
-
-  if (!fromPort || !toPort) {
-    console.warn('Wire references non-existent port');
-    return wireGroup;
-  }
-
-  // 計算旋轉後的端點位置
-  const startPos = getRotatedPortPosition(
-    fromComp.x,
-    fromComp.y,
-    fromPort.offsetX,
-    fromPort.offsetY,
-    fromComp.rotation
-  );
-  const endPos = getRotatedPortPosition(
-    toComp.x,
-    toComp.y,
-    toPort.offsetX,
-    toPort.offsetY,
-    toComp.rotation
-  );
-
-  const startX = startPos.x;
-  const startY = startPos.y;
-  const endX = endPos.x;
-  const endY = endPos.y;
-
-  // 建立已存在導線段（排除當前導線）
-  const existingSegments = buildExistingWireSegments(circuitStore.wires, wire.id);
-
-  // 使用智慧路由引擎
-  const points = smartOrthogonalRoute(
-    startX, startY,
-    endX, endY,
-    circuitStore.components,
-    existingSegments,
-    uiStore.gridSize,
-    { width: stage?.width() || 2000, height: stage?.height() || 2000 },
-    {
-      startComponentId: wire.fromComponentId,
-      endComponentId: wire.toComponentId,
-      startPortOffset: { x: fromPort.offsetX, y: fromPort.offsetY },
-      endPortOffset: { x: toPort.offsetX, y: toPort.offsetY },
-      startRotation: fromComp.rotation,
-      endRotation: toComp.rotation,
-    }
-  );
-  
-  const isSelected = wire.id === circuitStore.selectedWireId;
-
-  const line = new Konva.Line({
-    points,
-    stroke: isSelected ? '#ffeb3b' : '#ffcc00',
-    strokeWidth: isSelected ? 3 : 2,
-    lineCap: 'round',
-    lineJoin: 'round',
-    hitStrokeWidth: 10,
-  });
-
-  // 節點圓點（連接點）
-  const startDot = new Konva.Circle({
-    x: startX,
-    y: startY,
-    radius: 4,
-    fill: '#ffeb3b',
-    stroke: '#000',
-    strokeWidth: 1,
-  });
-
-  const endDot = new Konva.Circle({
-    x: endX,
-    y: endY,
-    radius: 4,
-    fill: '#ffeb3b',
-    stroke: '#000',
-    strokeWidth: 1,
-  });
-
-  wireGroup.add(line, startDot, endDot);
-
-  wireGroup.on('click tap', (e) => {
-    e.cancelBubble = true;
-    circuitStore.selectWire(wire.id);
-    renderAllWires();
-  });
-
-  return wireGroup;
-}
-
 // 重新繪製所有元件
 function renderAllComponents() {
-  if (!componentLayer || !stage) return;
+  if (!componentLayer || !renderer) return;
 
-  // 清空
-  componentNodes.forEach((node) => node.destroy());
-  componentNodes.clear();
-
-  // 繪製所有元件
-  circuitStore.components.forEach((comp) => {
-    const node = createComponentNode(comp);
-    componentNodes.set(comp.id, node);
-    componentLayer.add(node);
-  });
-
-  componentLayer.batchDraw();
+  renderer.renderAllComponents(
+    circuitStore.components,
+    componentLayer,
+    (comp) => createComponentNode(comp)
+  );
 }
 
 // 重新繪製所有導線
 function renderAllWires() {
-  if (!wireLayer || !stage) return;
+  if (!wireLayer || !renderer || !stage) return;
 
-  wireNodes.forEach((node) => node.destroy());
-  wireNodes.clear();
-
-  circuitStore.wires.forEach((wire) => {
-    const node = drawWire(wire);
-    wireNodes.set(wire.id, node);
-    wireLayer.add(node);
-  });
-
-  wireLayer.batchDraw();
+  renderer.renderAllWires(
+    circuitStore.wires,
+    wireLayer,
+    circuitStore.components,
+    uiStore.gridSize,
+    { width: stage.width(), height: stage.height() },
+    circuitStore.selectedWireId || undefined,
+    (wireId) => {
+      circuitStore.selectWire(wireId);
+      renderAllWires();
+    }
+  );
 
   // 如果電流動畫正在運行，重新初始化粒子
   if (circuitStore.isCurrentAnimating) {
@@ -725,7 +610,7 @@ function getAllWirePathsWithDirection(): WirePathInfo[] {
   
   if (powerSources.length === 0) {
     // 沒有電源，使用預設方向（全部正向）
-    wireNodes.forEach((wireGroup, wireId) => {
+    nodeManager?.forEachWireNode((wireGroup, wireId) => {
       const line = wireGroup.findOne('Line') as Konva.Line;
       if (line) {
         const points = line.points();
@@ -805,7 +690,7 @@ function getAllWirePathsWithDirection(): WirePathInfo[] {
   traceCurrentPath(primarySource.id, positivePort.id, new Set());
   
   // 建立帶方向的路徑陣列
-  wireNodes.forEach((wireGroup, wireId) => {
+  nodeManager?.forEachWireNode((wireGroup, wireId) => {
     const line = wireGroup.findOne('Line') as Konva.Line;
     if (line) {
       const points = line.points();
@@ -836,7 +721,7 @@ function getAllWirePathsWithDirection(): WirePathInfo[] {
 function getDefaultDirectionPaths(): WirePathInfo[] {
   const paths: WirePathInfo[] = [];
   
-  wireNodes.forEach((wireGroup, wireId) => {
+  nodeManager?.forEachWireNode((wireGroup, wireId) => {
     const line = wireGroup.findOne('Line') as Konva.Line;
     if (line) {
       const points = line.points();
@@ -895,11 +780,11 @@ function initCurrentFlowParticles() {
       };
       
       currentFlowParticles.push(particle);
-      currentFlowLayer.add(particle);
+      currentFlowLayer!.add(particle);
     }
   });
   
-  currentFlowLayer.batchDraw();
+  currentFlowLayer!.batchDraw();
 }
 
 /**
@@ -985,9 +870,8 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
   // 只有點擊背景時才處理
   if (e.target === stage) {
     // 如果正在接線，取消接線
-    if (isWiring) {
-      isWiring = false;
-      wiringStartPort = null;
+    if (wiringStateManager?.isInWiringMode()) {
+      wiringStateManager.cancelWiring();
       
       // 停止動畫
       if ((tempLayer as any)._pulseAnimation) {
@@ -1012,9 +896,8 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
 function handleKeyDown(e: KeyboardEvent) {
   // Escape 取消接線
   if (e.key === 'Escape') {
-    if (isWiring) {
-      isWiring = false;
-      wiringStartPort = null;
+    if (wiringStateManager?.isInWiringMode()) {
+      wiringStateManager.cancelWiring();
       
       // 停止動畫
       if ((tempLayer as any)._pulseAnimation) {
@@ -1061,26 +944,28 @@ onMounted(() => {
   const width = containerRef.value.clientWidth;
   const height = containerRef.value.clientHeight;
 
-  stage = new Konva.Stage({
-    container: containerRef.value,
-    width,
-    height,
-  });
+  // 初始化 KonvaStage
+  konvaStage = new KonvaStage();
+  konvaStage.initialize(containerRef.value, width, height);
 
-  // 建立圖層（由下往上）
-  gridLayer = new Konva.Layer();
-  guideLayer = new Konva.Layer();
-  wireLayer = new Konva.Layer();
-  currentFlowLayer = new Konva.Layer(); // 電流動畫圖層
-  componentLayer = new Konva.Layer();
-  tempLayer = new Konva.Layer();
+  // 從 KonvaStage 獲取各層
+  const layers = konvaStage.getLayers();
+  stage = konvaStage.getStage();
+  gridLayer = layers.grid;
+  guideLayer = layers.guide;
+  wireLayer = layers.wire;
+  currentFlowLayer = layers.currentFlow;
+  componentLayer = layers.component;
+  tempLayer = layers.temp;
 
-  stage.add(gridLayer);
-  stage.add(guideLayer);
-  stage.add(wireLayer);
-  stage.add(currentFlowLayer); // 電流動畫圖層
-  stage.add(componentLayer);
-  stage.add(tempLayer);
+  // 初始化 KonvaNodeManager
+  nodeManager = new KonvaNodeManager();
+
+  // 初始化 KonvaRenderer
+  renderer = new KonvaRenderer(nodeManager);
+
+  // 初始化 WiringStateManager
+  wiringStateManager = new WiringStateManager();
 
   // 繪製網格
   drawGrid(width, height);
@@ -1090,8 +975,8 @@ onMounted(() => {
   
   // 滑鼠移動事件 - 用於接線預覽
   stage.on('mousemove', () => {
-    if (isWiring && wiringStartPort) {
-      const pos = stage.getPointerPosition();
+    if (wiringStateManager?.isInWiringMode()) {
+      const pos = stage!.getPointerPosition();
       if (pos) {
         // 將目標點吸附到網格，確保轉角對齊
         const snappedPos = uiStore.snapPosition(pos.x, pos.y);
@@ -1101,19 +986,19 @@ onMounted(() => {
   });
 
   // 滑鼠滾輪事件 - 畫面縮放
-  stage.on('wheel', (e) => {
+  stage!.on('wheel', (e) => {
     e.evt.preventDefault(); // 防止頁面滾動
     
     const scaleBy = 1.1; // 縮放係數
-    const oldScale = stage.scaleX(); // 當前縮放比例
+    const oldScale = stage!.scaleX(); // 當前縮放比例
     
-    const pointer = stage.getPointerPosition();
+    const pointer = stage!.getPointerPosition();
     if (!pointer) return;
     
     // 計算滑鼠相對於 stage 的位置
     const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
+      x: (pointer.x - stage!.x()) / oldScale,
+      y: (pointer.y - stage!.y()) / oldScale,
     };
     
     // 根據滾輪方向計算新的縮放比例
@@ -1123,15 +1008,15 @@ onMounted(() => {
     // 限制縮放範圍 (0.1x ~ 5x)
     const clampedScale = Math.max(0.1, Math.min(5, newScale));
     
-    stage.scale({ x: clampedScale, y: clampedScale });
+    stage!.scale({ x: clampedScale, y: clampedScale });
     
     // 調整 stage 位置，使縮放以滑鼠位置為中心
     const newPos = {
       x: pointer.x - mousePointTo.x * clampedScale,
       y: pointer.y - mousePointTo.y * clampedScale,
     };
-    stage.position(newPos);
-    stage.batchDraw();
+    stage!.position(newPos);
+    stage!.batchDraw();
   });
 
   // 滑鼠拖曳平移畫面
@@ -1141,25 +1026,25 @@ onMounted(() => {
 
   stage.on('mousedown', (e) => {
     // 只有點擊空白背景時才啟動平移
-    if (e.target === stage && !isWiring) {
+    if (e.target === stage && !wiringStateManager?.isInWiringMode()) {
       isPanning = true;
-      panStartPos = stage.getPointerPosition() || { x: 0, y: 0 };
-      stageStartPos = { x: stage.x(), y: stage.y() };
+      panStartPos = stage!.getPointerPosition() || { x: 0, y: 0 };
+      stageStartPos = { x: stage!.x(), y: stage!.y() };
       document.body.style.cursor = 'grabbing';
     }
   });
 
-  stage.on('mousemove', (e) => {
+  stage.on('mousemove', () => {
     if (isPanning) {
-      const pos = stage.getPointerPosition();
+      const pos = stage!.getPointerPosition();
       if (pos) {
         const dx = pos.x - panStartPos.x;
         const dy = pos.y - panStartPos.y;
-        stage.position({
+        stage!.position({
           x: stageStartPos.x + dx,
           y: stageStartPos.y + dy,
         });
-        stage.batchDraw();
+        stage!.batchDraw();
       }
     }
   });
@@ -1186,8 +1071,8 @@ onMounted(() => {
     if (containerRef.value) {
       const newWidth = containerRef.value.clientWidth;
       const newHeight = containerRef.value.clientHeight;
-      stage.width(newWidth);
-      stage.height(newHeight);
+      stage!.width(newWidth);
+      stage!.height(newHeight);
       drawGrid(newWidth, newHeight);
     }
   });
