@@ -1210,6 +1210,40 @@ onMounted(() => {
     }
   });
 
+  // 滑鼠滾輪事件 - 畫面縮放
+  stage.on('wheel', (e) => {
+    e.evt.preventDefault(); // 防止頁面滾動
+    
+    const scaleBy = 1.1; // 縮放係數
+    const oldScale = stage.scaleX(); // 當前縮放比例
+    
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+    
+    // 計算滑鼠相對於 stage 的位置
+    const mousePointTo = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    };
+    
+    // 根據滾輪方向計算新的縮放比例
+    const direction = e.evt.deltaY > 0 ? -1 : 1;
+    const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+    
+    // 限制縮放範圍 (0.1x ~ 5x)
+    const clampedScale = Math.max(0.1, Math.min(5, newScale));
+    
+    stage.scale({ x: clampedScale, y: clampedScale });
+    
+    // 調整 stage 位置，使縮放以滑鼠位置為中心
+    const newPos = {
+      x: pointer.x - mousePointTo.x * clampedScale,
+      y: pointer.y - mousePointTo.y * clampedScale,
+    };
+    stage.position(newPos);
+    stage.batchDraw();
+  });
+
   // 監聽鍵盤
   window.addEventListener('keydown', handleKeyDown);
 
