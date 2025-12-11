@@ -25,6 +25,7 @@ export const useCircuitStore = defineStore('circuit', () => {
     const selectedWireId = ref<string | null>(null);
     const simulationData = ref<SimulationData | null>(null);
     const isSimulating = ref(false);
+    const isCurrentAnimating = ref(false); // 電流流動動畫狀態
 
     // Undo/Redo History
     // 使用 JSON 字串儲存快照，避免物件參考問題
@@ -331,6 +332,13 @@ export const useCircuitStore = defineStore('circuit', () => {
         isSimulating.value = value;
     }
 
+    /**
+     * 切換電流動畫
+     */
+    function toggleCurrentAnimation(): void {
+        isCurrentAnimating.value = !isCurrentAnimating.value;
+    }
+
     // 初始化第一筆紀錄
     initState();
 
@@ -343,6 +351,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         selectedWireId,
         simulationData,
         isSimulating,
+        isCurrentAnimating,
         canUndo,
         canRedo,
         // Getters
@@ -363,6 +372,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         loadNetlist,
         setSimulationData,
         setSimulating,
+        toggleCurrentAnimation,
         undo,
         redo,
     };

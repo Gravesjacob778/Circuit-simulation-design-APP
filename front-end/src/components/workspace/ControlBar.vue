@@ -5,7 +5,7 @@
  */
 
 import { useCircuitStore } from '@/stores/circuitStore';
-import { Eye, Scissors, Undo2, Redo2, Maximize, Scan } from 'lucide-vue-next';
+import { Eye, Scissors, Undo2, Redo2, Scan, Zap } from 'lucide-vue-next';
 
 const circuitStore = useCircuitStore();
 
@@ -40,6 +40,10 @@ function handleCut() {
     console.log('Component cut:', circuitStore.selectedComponentId);
   }
 }
+
+function handleToggleCurrentAnimation() {
+  circuitStore.toggleCurrentAnimation();
+}
 </script>
 
 <template>
@@ -51,6 +55,14 @@ function handleCut() {
       </button>
       <button class="icon-btn" title="Cut" @click="handleCut">
         <Scissors :size="20" />
+      </button>
+      <button 
+        class="icon-btn" 
+        :class="{ active: circuitStore.isCurrentAnimating }"
+        title="Toggle Current Flow Animation"
+        @click="handleToggleCurrentAnimation"
+      >
+        <Zap :size="20" />
       </button>
     </div>
 
@@ -125,5 +137,15 @@ function handleCut() {
   opacity: 0.3;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+.icon-btn.active {
+  color: #ffcc00;
+  background-color: rgba(255, 204, 0, 0.15);
+}
+
+.icon-btn.active:hover {
+  background-color: rgba(255, 204, 0, 0.25);
+  color: #ffeb3b;
 }
 </style>
