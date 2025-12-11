@@ -1,0 +1,111 @@
+/**
+ * Design Tokens - EveryCircuit 風格暗色主題
+ */
+
+:root {
+  /* ===== 基礎色彩 ===== */
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #121212;
+  --color-bg-panel: #1a1a1a;
+  --color-bg-elevated: #222222;
+  --color-bg-hover: #2a2a2a;
+
+  /* 邊框 */
+  --color-border: #333333;
+  --color-border-light: #444444;
+
+  /* 文字 */
+  --color-text-primary: #e8e8e8;
+  --color-text-secondary: #a0a0a0;
+  --color-text-muted: #666666;
+
+  /* 強調色 - 電路顏色 */
+  --color-accent-green: #4caf50;
+  --color-accent-green-light: #81c784;
+  --color-accent-yellow: #ffd740;
+  --color-accent-blue: #42a5f5;
+  --color-accent-purple: #ab47bc;
+  --color-accent-orange: #ff9800;
+  --color-accent-red: #f44336;
+
+  /* 電流與電壓視覺化 */
+  --color-current-flow: #4caf50;
+  --color-voltage-high: #ffeb3b;
+  --color-voltage-low: #2196f3;
+  --color-ground: #888888;
+
+  /* 網格 */
+  --color-grid-line: #1a1a1a;
+  --color-grid-dot: #333333;
+
+  /* 選取與高亮 */
+  --color-selection: rgba(76, 175, 80, 0.3);
+  --color-selection-border: #4caf50;
+
+  /* ===== 間距 ===== */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+
+  /* ===== 圓角 ===== */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ===== 字體 ===== */
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 24px;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ===== 陰影 ===== */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+  --shadow-glow-green: 0 0 10px rgba(76, 175, 80, 0.5);
+
+  /* ===== 動畫 ===== */
+  --transition-fast: 0.1s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+
+  /* ===== 佈局尺寸 ===== */
+  --header-height: 48px;
+  --sidebar-left-width: 240px;
+  --sidebar-right-width: 320px;
+  --toolbar-height: 50px;
+  --control-bar-height: 44px;
+}
+
+/* ===== 滾動條樣式 ===== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-light);
+}
