@@ -164,11 +164,29 @@ function drawGrid(width: number, height: number) {
 
 // 繪製電阻符號
 function drawResistor(group: Konva.Group, component: CircuitComponent) {
+  // 如果選取，添加高亮背景
+  if (component.selected) {
+    const highlight = new Konva.Rect({
+      x: -35,
+      y: -15,
+      width: 70,
+      height: 30,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      cornerRadius: 4,
+      shadowColor: '#4caf50',
+      shadowBlur: 10,
+      shadowOpacity: 0.5,
+    });
+    group.add(highlight);
+  }
+
   // 電阻本體 (鋸齒形狀)
   const zigzag = new Konva.Line({
     points: [-30, 0, -20, 0, -15, -8, -5, 8, 5, -8, 15, 8, 20, 0, 30, 0],
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
     lineCap: 'round',
     lineJoin: 'round',
   });
@@ -209,29 +227,47 @@ function drawResistor(group: Konva.Group, component: CircuitComponent) {
 
 // 繪製電容符號
 function drawCapacitor(group: Konva.Group, component: CircuitComponent) {
+  // 如果選取，添加高亮背景
+  if (component.selected) {
+    const highlight = new Konva.Rect({
+      x: -25,
+      y: -20,
+      width: 50,
+      height: 40,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      cornerRadius: 4,
+      shadowColor: '#4caf50',
+      shadowBlur: 10,
+      shadowOpacity: 0.5,
+    });
+    group.add(highlight);
+  }
+
   // 左側連線
   const line1 = new Konva.Line({
     points: [-20, 0, -5, 0],
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
   });
   // 左極板
   const plate1 = new Konva.Line({
     points: [-5, -12, -5, 12],
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
   });
   // 右極板
   const plate2 = new Konva.Line({
     points: [5, -12, 5, 12],
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
   });
   // 右側連線
   const line2 = new Konva.Line({
     points: [5, 0, 20, 0],
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
   });
 
   group.add(line1, plate1, plate2, line2);
@@ -305,13 +341,29 @@ function drawGround(group: Konva.Group, component: CircuitComponent) {
 
 // 繪製 DC 電源
 function drawDCSource(group: Konva.Group, component: CircuitComponent) {
+  // 如果選取，添加高亮背景
+  if (component.selected) {
+    const highlight = new Konva.Circle({
+      x: 0,
+      y: 0,
+      radius: 40,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      shadowColor: '#4caf50',
+      shadowBlur: 10,
+      shadowOpacity: 0.5,
+    });
+    group.add(highlight);
+  }
+
   // 圓形
   const circle = new Konva.Circle({
     x: 0,
     y: 0,
     radius: 18,
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
     fill: 'transparent',
   });
 
@@ -378,13 +430,29 @@ function drawDCSource(group: Konva.Group, component: CircuitComponent) {
 
 // 繪製 AC 電源
 function drawACSource(group: Konva.Group, component: CircuitComponent) {
+  // 如果選取，添加高亮背景
+  if (component.selected) {
+    const highlight = new Konva.Circle({
+      x: 0,
+      y: 0,
+      radius: 40,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      shadowColor: '#4caf50',
+      shadowBlur: 10,
+      shadowOpacity: 0.5,
+    });
+    group.add(highlight);
+  }
+
   // 圓形
   const circle = new Konva.Circle({
     x: 0,
     y: 0,
     radius: 18,
     stroke: component.selected ? '#4caf50' : '#cccccc',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
     fill: 'transparent',
   });
 
@@ -440,13 +508,31 @@ function drawACSource(group: Konva.Group, component: CircuitComponent) {
 
 // 繪製通用元件
 function drawGenericComponent(group: Konva.Group, component: CircuitComponent) {
+  // 如果選取，添加高亮背景
+  if (component.selected) {
+    const highlight = new Konva.Rect({
+      x: -30,
+      y: -20,
+      width: 60,
+      height: 40,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      cornerRadius: 4,
+      shadowColor: '#4caf50',
+      shadowBlur: 10,
+      shadowOpacity: 0.5,
+    });
+    group.add(highlight);
+  }
+
   const rect = new Konva.Rect({
     x: -25,
     y: -15,
     width: 50,
     height: 30,
     stroke: component.selected ? '#4caf50' : '#666666',
-    strokeWidth: 2,
+    strokeWidth: component.selected ? 3 : 2,
     fill: 'transparent',
     cornerRadius: 4,
   });
@@ -508,7 +594,7 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
     x: component.x,
     y: component.y,
     rotation: component.rotation,
-    draggable: !isWiring, // 接線模式時禁止拖曳
+    draggable: component.selected && !isWiring, // 只有選取且非接線模式才能拖曳
     id: component.id,
   });
 
@@ -581,6 +667,8 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
     e.cancelBubble = true;
     circuitStore.selectComponent(component.id);
     updateComponentVisuals();
+    // 滑鼠游標改為移動游標
+    document.body.style.cursor = 'move';
   });
 
   return group;
@@ -591,9 +679,57 @@ function updateComponentVisuals() {
   circuitStore.components.forEach((comp) => {
     const node = componentNodes.get(comp.id);
     if (node) {
+      // 更新拖拉狀態：只有選取的元件才能拖拉
+      node.draggable(comp.selected && !isWiring);
+      
+      // 更新游標樣式
+      if (comp.selected) {
+        node.on('mouseenter', () => {
+          if (!isWiring) document.body.style.cursor = 'move';
+        });
+        node.on('mouseleave', () => {
+          document.body.style.cursor = 'crosshair';
+        });
+      } else {
+        node.off('mouseenter');
+        node.off('mouseleave');
+      }
+      
+      // 重新繪製以顯示高亮效果
       node.destroyChildren();
       drawComponentShape(node, comp);
-      node.rotation(comp.rotation);
+      
+      // 重新綁定端點事件（因為子節點被重建）
+      const portCircles = node.find('.port');
+      if (portCircles && portCircles.length > 0) {
+        portCircles.forEach((portShape, index) => {
+          const port = comp.ports[index];
+          if (!port) return;
+
+          portShape.on('click tap', (e) => {
+            e.cancelBubble = true;
+            const portGlobalX = comp.x + port.offsetX;
+            const portGlobalY = comp.y + port.offsetY;
+            handlePortClick(comp.id, port.id, portGlobalX, portGlobalY);
+          });
+
+          portShape.on('mouseenter', () => {
+            (portShape as Konva.Circle).radius(6);
+            (portShape as Konva.Circle).stroke('#ffeb3b');
+            (portShape as Konva.Circle).strokeWidth(2);
+            componentLayer?.batchDraw();
+            document.body.style.cursor = 'pointer';
+          });
+
+          portShape.on('mouseleave', () => {
+            (portShape as Konva.Circle).radius(4);
+            (portShape as Konva.Circle).stroke((portShape as Konva.Circle).fill() as string);
+            (portShape as Konva.Circle).strokeWidth(1);
+            componentLayer?.batchDraw();
+            document.body.style.cursor = comp.selected ? 'move' : 'crosshair';
+          });
+        });
+      }
     }
   });
   componentLayer?.batchDraw();
@@ -734,6 +870,8 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
     circuitStore.selectWire(null);
     updateComponentVisuals();
     renderAllWires();
+    // 恢復預設游標
+    document.body.style.cursor = 'crosshair';
   }
 }
 
@@ -832,13 +970,20 @@ onMounted(() => {
   resizeObserver.observe(containerRef.value);
 });
 
-// 監聽元件變化
+// 監聽元件數量變化（新增/刪除）
 watch(
-  () => circuitStore.components,
+  () => circuitStore.components.length,
   () => {
     renderAllComponents();
-  },
-  { deep: true, flush: 'post' }
+  }
+);
+
+// 監聽元件選取狀態變化
+watch(
+  () => circuitStore.selectedComponentId,
+  () => {
+    updateComponentVisuals();
+  }
 );
 
 // 監聽導線變化
