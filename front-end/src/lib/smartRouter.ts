@@ -1,47 +1,12 @@
 /**
  * smartRouter.ts
- * 智慧正交路由引擎
- * 實現 A* 尋路 + Manhattan Routing + 避障 + 分道
+ * 簡化正交路由引擎
+ * 根據端點位置實現智慧路由，並支援分道機制避免重疊
  */
 
 import type { CircuitComponent, Wire } from '@/types/circuit';
 
 // ============= 型別定義 =============
-
-interface Point {
-    x: number;
-    y: number;
-}
-
-interface PathNode {
-    x: number;
-    y: number;
-    g: number;
-    h: number;
-    f: number;
-    parent: PathNode | null;
-    direction: Direction;
-}
-
-type Direction = 'N' | 'S' | 'E' | 'W' | 'NONE';
-
-interface RoutingContext {
-    gridSize: number;
-    canvasWidth: number;
-    canvasHeight: number;
-    obstacles: BoundingBox[];
-    existingWires: WireSegment[];
-    turnPenalty: number;
-    overlapPenalty: number;
-}
-
-interface BoundingBox {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-    componentId?: string;
-}
 
 export interface WireSegment {
     x1: number;
@@ -51,499 +16,12 @@ export interface WireSegment {
     wireId: string;
 }
 
-// ============= 輔助函數 =============
-
-function snapToGrid(value: number, gridSize: number): number {
-    return Math.round(value / gridSize) * gridSize;
-}
-
-function manhattanDistance(a: Point, b: Point): number {
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-}
-
-function getPortExitDirection(offsetX: number, offsetY: number, rotation: number): Direction {
-    const rad = (rotation * Math.PI) / 180;
-    const rotatedX = offsetX * Math.cos(rad) - offsetY * Math.sin(rad);
-    const rotatedY = offsetX * Math.sin(rad) + offsetY * Math.cos(rad);
-
-    if (Math.abs(rotatedX) > Math.abs(rotatedY)) {
-        return rotatedX > 0 ? 'E' : 'W';
-    } else {
-        return rotatedY > 0 ? 'S' : 'N';
-    }
-}
-
-function oppositeDirection(dir: Direction): Direction {
-    switch (dir) {
-        case 'N': return 'S';
-        case 'S': return 'N';
-        case 'E': return 'W';
-        case 'W': return 'E';
-        default: return 'NONE';
-    }
-}
-
-function inflateBoundingBox(box: BoundingBox, margin: number): BoundingBox {
-    return {
-        minX: box.minX - margin,
-        minY: box.minY - margin,
-        maxX: box.maxX + margin,
-        maxY: box.maxY + margin,
-        componentId: box.componentId
-    };
-}
-
-// ============= 成本網格建構 =============
-
-function buildCostGrid(ctx: RoutingContext): Map<string, number> {
-    const costMap = new Map<string, number>();
-    const { gridSize, obstacles, existingWires, overlapPenalty } = ctx;
-
-    for (const obs of obstacles) {
-        // 膨脹障礙物邊界，讓路徑與元件保持足夠距離
-        const clearanceMargin = gridSize;
-        const inflated = inflateBoundingBox(obs, clearanceMargin);
-        for (let x = snapToGrid(inflated.minX, gridSize); x <= inflated.maxX; x += gridSize) {
-            for (let y = snapToGrid(inflated.minY, gridSize); y <= inflated.maxY; y += gridSize) {
-                costMap.set(`${x},${y}`, Infinity);
-            }
-        }
-    }
-
-    for (const seg of existingWires) {
-        const dx = seg.x2 - seg.x1;
-        const dy = seg.y2 - seg.y1;
-        const steps = Math.max(Math.abs(dx), Math.abs(dy)) / gridSize;
-        const stepX = steps > 0 ? dx / steps : 0;
-        const stepY = steps > 0 ? dy / steps : 0;
-
-        for (let i = 0; i <= steps; i++) {
-            const px = snapToGrid(seg.x1 + stepX * i, gridSize);
-            const py = snapToGrid(seg.y1 + stepY * i, gridSize);
-            const key = `${px},${py}`;
-            const currentCost = costMap.get(key) ?? 0;
-            if (currentCost !== Infinity) {
-                costMap.set(key, currentCost + overlapPenalty);
-            }
-        }
-    }
-
-    return costMap;
-}
-
-// ============= A* 正交尋路 =============
-
-/**
- * 計算是否為回頭（U-turn）
- */
-function isReverseDirection(from: Direction, to: Direction): boolean {
-    return (from === 'N' && to === 'S') ||
-        (from === 'S' && to === 'N') ||
-        (from === 'E' && to === 'W') ||
-        (from === 'W' && to === 'E');
-}
-
-function aStarOrthogonal(
-    start: Point,
-    end: Point,
-    ctx: RoutingContext,
-    startDir: Direction = 'NONE',
-    endDir: Direction = 'NONE'
-): Point[] {
-    const { gridSize, canvasWidth, canvasHeight, turnPenalty } = ctx;
-    const costGrid = buildCostGrid(ctx);
-
-    const openSet: PathNode[] = [];
-    // 狀態空間擴充為 (x, y, dir)，防止從同一格子用不同方向重複探索
-    const visited = new Map<string, number>(); // key: "x,y,dir" => best g cost
-
-    const startNode: PathNode = {
-        x: snapToGrid(start.x, gridSize),
-        y: snapToGrid(start.y, gridSize),
-        g: 0,
-        h: manhattanDistance(start, end),
-        f: manhattanDistance(start, end),
-        parent: null,
-        direction: startDir
-    };
-
-    openSet.push(startNode);
-
-    const endX = snapToGrid(end.x, gridSize);
-    const endY = snapToGrid(end.y, gridSize);
-
-    const directions: { dir: Direction; dx: number; dy: number }[] = [
-        { dir: 'N', dx: 0, dy: -gridSize },
-        { dir: 'S', dx: 0, dy: gridSize },
-        { dir: 'E', dx: gridSize, dy: 0 },
-        { dir: 'W', dx: -gridSize, dy: 0 }
-    ];
-
-    // 回頭懲罰（U-turn）比普通轉彎更高
-    const reversePenalty = turnPenalty * 5;
-
-    let iterations = 0;
-    const maxIterations = 2000; // 增加迭代上限以找到更優路徑
-
-    while (openSet.length > 0 && iterations < maxIterations) {
-        iterations++;
-
-        openSet.sort((a, b) => a.f - b.f);
-        const current = openSet.shift()!;
-
-        // 使用 (x, y, dir) 作為狀態 key
-        const currentStateKey = `${current.x},${current.y},${current.direction}`;
-
-        if (current.x === endX && current.y === endY) {
-            return reconstructPath(current);
-        }
-
-        // 如果已有更好的路徑到達這個狀態，跳過
-        const existingCost = visited.get(currentStateKey);
-        if (existingCost !== undefined && existingCost <= current.g) {
-            continue;
-        }
-        visited.set(currentStateKey, current.g);
-
-        for (const { dir, dx, dy } of directions) {
-            const nx = current.x + dx;
-            const ny = current.y + dy;
-
-            if (nx < 0 || nx > canvasWidth || ny < 0 || ny > canvasHeight) continue;
-
-            const cellCost = costGrid.get(`${nx},${ny}`) ?? 0;
-            if (cellCost === Infinity) continue;
-
-            let moveCost = gridSize + cellCost;
-
-            // 轉彎懲罰
-            if (current.direction !== 'NONE' && current.direction !== dir) {
-                // 回頭（U-turn）懲罰更高
-                if (isReverseDirection(current.direction, dir)) {
-                    moveCost += reversePenalty * gridSize;
-                } else {
-                    moveCost += turnPenalty * gridSize;
-                }
-            }
-
-            // 起點方向限制
-            if (current.parent === null && startDir !== 'NONE' && dir !== startDir) {
-                moveCost += turnPenalty * gridSize * 2;
-            }
-
-            // 終點進入方向限制
-            if (nx === endX && ny === endY && endDir !== 'NONE') {
-                const requiredApproach = oppositeDirection(endDir);
-                if (dir !== requiredApproach) {
-                    moveCost += turnPenalty * gridSize * 2;
-                }
-            }
-
-            const tentativeG = current.g + moveCost;
-            const neighborStateKey = `${nx},${ny},${dir}`;
-
-            // 檢查是否已有更好的路徑到達這個狀態
-            const existingNeighborCost = visited.get(neighborStateKey);
-            if (existingNeighborCost !== undefined && existingNeighborCost <= tentativeG) {
-                continue;
-            }
-
-            // 檢查 openSet 中是否有相同狀態且成本更低
-            const existingIndex = openSet.findIndex(n =>
-                n.x === nx && n.y === ny && n.direction === dir
-            );
-            if (existingIndex !== -1) {
-                const existingNode = openSet[existingIndex];
-                if (existingNode && tentativeG >= existingNode.g) continue;
-                openSet.splice(existingIndex, 1);
-            }
-
-            const h = manhattanDistance({ x: nx, y: ny }, end);
-            const newNode: PathNode = {
-                x: nx,
-                y: ny,
-                g: tentativeG,
-                h,
-                f: tentativeG + h,
-                parent: current,
-                direction: dir
-            };
-
-            openSet.push(newNode);
-        }
-    }
-
-    return fallbackLPath(start, end, gridSize);
-}
-
-function reconstructPath(node: PathNode): Point[] {
-    const path: Point[] = [];
-    let current: PathNode | null = node;
-
-    while (current !== null) {
-        path.unshift({ x: current.x, y: current.y });
-        current = current.parent;
-    }
-
-    return path;
-}
-
-function simplifyPath(path: Point[]): Point[] {
-    if (path.length <= 2) return path;
-
-    // 第一步：移除回路（如果同一座標出現兩次，移除中間的迴圈）
-    let loopRemoved = removeLoops(path);
-
-    // 第二步：合併共線段
-    const first = loopRemoved[0];
-    if (!first) return loopRemoved;
-
-    const simplified: Point[] = [first];
-
-    for (let i = 1; i < loopRemoved.length - 1; i++) {
-        const prev = simplified[simplified.length - 1];
-        const curr = loopRemoved[i];
-        const next = loopRemoved[i + 1];
-
-        if (!prev || !curr || !next) continue;
-
-        const sameLine = (prev.x === curr.x && curr.x === next.x) ||
-            (prev.y === curr.y && curr.y === next.y);
-
-        if (!sameLine) {
-            simplified.push(curr);
-        }
-    }
-
-    const last = loopRemoved[loopRemoved.length - 1];
-    if (last) {
-        simplified.push(last);
-    }
-    return simplified;
-}
-
-/**
- * 移除路徑中的回路
- * 如果同一座標出現兩次，移除中間形成的迴圈
- */
-function removeLoops(path: Point[]): Point[] {
-    const seen = new Map<string, number>(); // key => index in result
-    const result: Point[] = [];
-
-    for (let i = 0; i < path.length; i++) {
-        const point = path[i];
-        if (!point) continue;
-
-        const key = `${point.x},${point.y}`;
-
-        if (seen.has(key)) {
-            // 發現回路：移除從 seen[key]+1 到當前位置之前的所有點
-            const loopStartIndex = seen.get(key)!;
-            // 截斷 result 到回路起點（包含）
-            result.length = loopStartIndex + 1;
-            // 重建 seen map
-            seen.clear();
-            for (let j = 0; j < result.length; j++) {
-                const p = result[j];
-                if (p) seen.set(`${p.x},${p.y}`, j);
-            }
-        } else {
-            seen.set(key, result.length);
-            result.push(point);
-        }
-    }
-
-    return result;
-}
-
-function fallbackLPath(start: Point, end: Point, gridSize: number): Point[] {
-    const x1 = snapToGrid(start.x, gridSize);
-    const y1 = snapToGrid(start.y, gridSize);
-    const x2 = snapToGrid(end.x, gridSize);
-    const y2 = snapToGrid(end.y, gridSize);
-
-    const dx = Math.abs(x2 - x1);
-    const dy = Math.abs(y2 - y1);
-
-    if (dx >= dy) {
-        return [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }];
-    } else {
-        return [{ x: x1, y: y1 }, { x: x1, y: y2 }, { x: x2, y: y2 }];
-    }
-}
-
-// ============= 分道機制 =============
-
-/**
- * 檢查兩條線段是否重疊（平行且有共同部分）
- */
-function checkSegmentOverlap(
-    seg1: { x1: number; y1: number; x2: number; y2: number },
-    seg2: WireSegment
-): { overlaps: boolean; isHorizontal: boolean } {
-    const isHorizontal1 = seg1.y1 === seg1.y2;
-    const isVertical1 = seg1.x1 === seg1.x2;
-    const isHorizontal2 = seg2.y1 === seg2.y2;
-    const isVertical2 = seg2.x1 === seg2.x2;
-
-    // 兩條水平線段
-    if (isHorizontal1 && isHorizontal2 && seg1.y1 === seg2.y1) {
-        const min1 = Math.min(seg1.x1, seg1.x2);
-        const max1 = Math.max(seg1.x1, seg1.x2);
-        const min2 = Math.min(seg2.x1, seg2.x2);
-        const max2 = Math.max(seg2.x1, seg2.x2);
-        // 檢查是否有重疊區間
-        if (max1 > min2 && max2 > min1) {
-            return { overlaps: true, isHorizontal: true };
-        }
-    }
-
-    // 兩條垂直線段
-    if (isVertical1 && isVertical2 && seg1.x1 === seg2.x1) {
-        const min1 = Math.min(seg1.y1, seg1.y2);
-        const max1 = Math.max(seg1.y1, seg1.y2);
-        const min2 = Math.min(seg2.y1, seg2.y2);
-        const max2 = Math.max(seg2.y1, seg2.y2);
-        // 檢查是否有重疊區間
-        if (max1 > min2 && max2 > min1) {
-            return { overlaps: true, isHorizontal: false };
-        }
-    }
-
-    return { overlaps: false, isHorizontal: false };
-}
-
-/**
- * 分道機制 - 檢測並偏移重疊的線段
- */
-function assignLane(
-    path: Point[],
-    existingWires: WireSegment[],
-    gridSize: number
-): Point[] {
-    if (path.length < 2) return path;
-
-    const result = path.map(p => ({ ...p }));
-    const laneOffset = gridSize / 2; // 分道偏移量
-
-    // 遍歷路徑中的每一條線段
-    for (let i = 0; i < result.length - 1; i++) {
-        const p1 = result[i];
-        const p2 = result[i + 1];
-
-        if (!p1 || !p2) continue;
-
-        const currentSeg = { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
-        let maxOverlapCount = 0;
-
-        // 檢查當前線段與所有現有線段的重疊
-        for (const existingSeg of existingWires) {
-            const { overlaps } = checkSegmentOverlap(currentSeg, existingSeg);
-            if (overlaps) {
-                maxOverlapCount++;
-            }
-        }
-
-        // 如果有重疊，偏移當前線段
-        if (maxOverlapCount > 0) {
-            const isHorizontal = p1.y === p2.y;
-            const offsetAmount = maxOverlapCount * laneOffset;
-
-            if (isHorizontal) {
-                // 水平線段 -> 垂直偏移 (向下)
-                // 需要同時調整這條線段的兩個端點
-                // 但不能調整路徑的第一個和最後一個點（端點）
-                if (i > 0) {
-                    result[i] = { x: p1.x, y: p1.y + offsetAmount };
-                }
-                if (i + 1 < result.length - 1) {
-                    result[i + 1] = { x: p2.x, y: p2.y + offsetAmount };
-                }
-            } else {
-                // 垂直線段 -> 水平偏移 (向右)
-                if (i > 0) {
-                    result[i] = { x: p1.x + offsetAmount, y: p1.y };
-                }
-                if (i + 1 < result.length - 1) {
-                    result[i + 1] = { x: p2.x + offsetAmount, y: p2.y };
-                }
-            }
-        }
-    }
-
-    // 清理路徑：確保相鄰點之間的連線仍然是正交的
-    return cleanupPath(result, gridSize);
-}
-
-/**
- * 清理路徑，確保正交性並移除冗餘點
- */
-function cleanupPath(path: Point[], _gridSize?: number): Point[] {
-    if (path.length < 2) return path;
-
-    const result: Point[] = [path[0]!];
-
-    for (let i = 1; i < path.length; i++) {
-        const prev = result[result.length - 1]!;
-        const curr = path[i]!;
-
-        // 如果當前點與前一點相同，跳過
-        if (prev.x === curr.x && prev.y === curr.y) continue;
-
-        // 如果不是正交連接，插入中間點
-        if (prev.x !== curr.x && prev.y !== curr.y) {
-            // 插入一個中間點使其正交（先水平後垂直）
-            result.push({ x: curr.x, y: prev.y });
-        }
-
-        result.push(curr);
-    }
-
-    // 再次簡化：移除共線的中間點
-    const simplified: Point[] = [result[0]!];
-    for (let i = 1; i < result.length - 1; i++) {
-        const prev = simplified[simplified.length - 1]!;
-        const curr = result[i]!;
-        const next = result[i + 1]!;
-
-        const sameLine = (prev.x === curr.x && curr.x === next.x) ||
-            (prev.y === curr.y && curr.y === next.y);
-
-        if (!sameLine) {
-            simplified.push(curr);
-        }
-    }
-
-    if (result.length > 1) {
-        simplified.push(result[result.length - 1]!);
-    }
-
-    return simplified;
+interface Point {
+    x: number;
+    y: number;
 }
 
 // ============= 主要導出函數 =============
-
-export function buildObstaclesFromComponents(
-    components: CircuitComponent[],
-    excludeIds: string[] = []
-): BoundingBox[] {
-    const obstacles: BoundingBox[] = [];
-    const componentSize = 40;
-
-    for (const comp of components) {
-        if (excludeIds.includes(comp.id)) continue;
-
-        obstacles.push({
-            minX: comp.x - componentSize / 2,
-            minY: comp.y - componentSize / 2,
-            maxX: comp.x + componentSize / 2,
-            maxY: comp.y + componentSize / 2,
-            componentId: comp.id
-        });
-    }
-
-    return obstacles;
-}
 
 export function buildExistingWireSegments(
     wires: Wire[],
@@ -575,16 +53,114 @@ export function buildExistingWireSegments(
 }
 
 /**
- * 根據方向計算延伸點位置
+ * 檢查兩條線段是否重疊（平行且有共同部分）
  */
-function getExtensionPoint(x: number, y: number, dir: Direction, distance: number): Point {
-    switch (dir) {
-        case 'N': return { x, y: y - distance };
-        case 'S': return { x, y: y + distance };
-        case 'E': return { x: x + distance, y };
-        case 'W': return { x: x - distance, y };
-        default: return { x, y };
+function checkSegmentOverlap(
+    seg1: { x1: number; y1: number; x2: number; y2: number },
+    seg2: WireSegment
+): { overlaps: boolean; isHorizontal: boolean } {
+    const isHorizontal1 = Math.abs(seg1.y1 - seg1.y2) < 1;
+    const isVertical1 = Math.abs(seg1.x1 - seg1.x2) < 1;
+    const isHorizontal2 = Math.abs(seg2.y1 - seg2.y2) < 1;
+    const isVertical2 = Math.abs(seg2.x1 - seg2.x2) < 1;
+
+    // 兩條水平線段
+    if (isHorizontal1 && isHorizontal2 && Math.abs(seg1.y1 - seg2.y1) < 5) {
+        const min1 = Math.min(seg1.x1, seg1.x2);
+        const max1 = Math.max(seg1.x1, seg1.x2);
+        const min2 = Math.min(seg2.x1, seg2.x2);
+        const max2 = Math.max(seg2.x1, seg2.x2);
+        // 檢查是否有重疊區間
+        if (max1 > min2 && max2 > min1) {
+            return { overlaps: true, isHorizontal: true };
+        }
     }
+
+    // 兩條垂直線段
+    if (isVertical1 && isVertical2 && Math.abs(seg1.x1 - seg2.x1) < 5) {
+        const min1 = Math.min(seg1.y1, seg1.y2);
+        const max1 = Math.max(seg1.y1, seg1.y2);
+        const min2 = Math.min(seg2.y1, seg2.y2);
+        const max2 = Math.max(seg2.y1, seg2.y2);
+        // 檢查是否有重疊區間
+        if (max1 > min2 && max2 > min1) {
+            return { overlaps: true, isHorizontal: false };
+        }
+    }
+
+    return { overlaps: false, isHorizontal: false };
+}
+
+/**
+ * 計算線段的重疊數量
+ */
+function countOverlaps(
+    segment: { x1: number; y1: number; x2: number; y2: number },
+    existingWires: WireSegment[]
+): { count: number; isHorizontal: boolean } {
+    let count = 0;
+    let isHorizontal = Math.abs(segment.y1 - segment.y2) < 1;
+
+    for (const existingSeg of existingWires) {
+        const { overlaps, isHorizontal: segIsHorizontal } = checkSegmentOverlap(segment, existingSeg);
+        if (overlaps) {
+            count++;
+            isHorizontal = segIsHorizontal;
+        }
+    }
+
+    return { count, isHorizontal };
+}
+
+/**
+ * 應用分道偏移到路徑點
+ */
+function applyLaneOffset(
+    points: Point[],
+    existingWires: WireSegment[],
+    gridSize: number
+): Point[] {
+    if (points.length < 2) return points;
+
+    const result = points.map(p => ({ ...p }));
+    const laneOffset = gridSize * 0.6; // 分道偏移量
+
+    // 遍歷路徑中的每一條線段
+    for (let i = 0; i < result.length - 1; i++) {
+        const p1 = result[i];
+        const p2 = result[i + 1];
+
+        if (!p1 || !p2) continue;
+
+        const segment = { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+        const { count, isHorizontal } = countOverlaps(segment, existingWires);
+
+        // 如果有重疊，偏移中間的線段
+        if (count > 0) {
+            const offsetAmount = count * laneOffset;
+
+            if (isHorizontal) {
+                // 水平線段 -> 垂直偏移
+                // 只偏移中間點，不偏移端點
+                if (i > 0) {
+                    result[i] = { x: p1.x, y: p1.y + offsetAmount };
+                }
+                if (i + 1 < result.length - 1) {
+                    result[i + 1] = { x: p2.x, y: p2.y + offsetAmount };
+                }
+            } else {
+                // 垂直線段 -> 水平偏移
+                if (i > 0) {
+                    result[i] = { x: p1.x + offsetAmount, y: p1.y };
+                }
+                if (i + 1 < result.length - 1) {
+                    result[i + 1] = { x: p2.x + offsetAmount, y: p2.y };
+                }
+            }
+        }
+    }
+
+    return result;
 }
 
 /**
@@ -595,10 +171,10 @@ export function smartOrthogonalRoute(
     startY: number,
     endX: number,
     endY: number,
-    components: CircuitComponent[],
+    _components: CircuitComponent[],
     existingWireSegments: WireSegment[],
     gridSize: number,
-    canvasSize: { width: number; height: number } = { width: 2000, height: 2000 },
+    _canvasSize: { width: number; height: number } = { width: 2000, height: 2000 },
     options: {
         startComponentId?: string;
         endComponentId?: string;
@@ -618,186 +194,63 @@ export function smartOrthogonalRoute(
     const isStartTopPort = options.startPortOffset ? options.startPortOffset.y < 0 : false;
     const isEndTopPort = options.endPortOffset ? options.endPortOffset.y < 0 : false;
 
+    let pathPoints: Point[];
+
     // 情況 1：相同 Y 軸 - 直接水平連接
     if (isSameY) {
-        return [startX, startY, endX, startY];
-    }
-
-    // 情況 2：不同 Y 軸 - 根據端點類型決定路由方式
-    const isStartHigher = startY < endY; // Y 軸向下為正
-
-    // 判斷是上端點連線還是下端點連線
-    // 如果起點或終點任一是上端點，使用上端點邏輯
-    const isTopPortConnection = isStartTopPort || isEndTopPort;
-
-    if (isTopPortConnection) {
-        // 上端點連線邏輯：從最高點開始，先水平後垂直
-        if (isStartHigher) {
-            // 起點較高：從起點水平移動到終點 X 軸，再垂直向下
-            return [
-                startX, startY,      // 起點
-                endX, startY,        // 水平移動到終點 X 軸
-                endX, endY           // 垂直向下到終點
-            ];
-        } else {
-            // 終點較高：從起點垂直向上到終點 Y 軸，再水平移動
-            return [
-                startX, startY,      // 起點
-                startX, endY,        // 垂直向上到終點 Y 軸
-                endX, endY           // 水平移動到終點
-            ];
-        }
+        pathPoints = [
+            { x: startX, y: startY },
+            { x: endX, y: startY }
+        ];
     } else {
-        // 下端點連線邏輯：從最低點開始，先水平後垂直（與上端點相反）
-        if (isStartHigher) {
-            // 起點較高（終點較低）：從起點垂直向下到終點 Y 軸，再水平移動
-            return [
-                startX, startY,      // 起點
-                startX, endY,        // 垂直向下到終點 Y 軸
-                endX, endY           // 水平移動到終點
-            ];
-        } else {
-            // 終點較高（起點較低）：從起點水平移動到終點 X 軸，再垂直向上
-            return [
-                startX, startY,      // 起點
-                endX, startY,        // 水平移動到終點 X 軸
-                endX, endY           // 垂直向上到終點
-            ];
-        }
-    }
+        // 情況 2：不同 Y 軸 - 根據端點類型決定路由方式
+        const isStartHigher = startY < endY; // Y 軸向下為正
 
-    /* 原有的複雜路由邏輯保留作為備用
-    const obstacles = buildObstaclesFromComponents(
-        components,
-        [options.startComponentId, options.endComponentId].filter(Boolean) as string[]
-    );
+        // 判斷是上端點連線還是下端點連線
+        // 如果起點或終點任一是上端點，使用上端點邏輯
+        const isTopPortConnection = isStartTopPort || isEndTopPort;
 
-    const ctx: RoutingContext = {
-        gridSize,
-        canvasWidth: canvasSize.width,
-        canvasHeight: canvasSize.height,
-        obstacles,
-        existingWires: existingWireSegments,
-        turnPenalty: 2.0,
-        overlapPenalty: 5.0
-    };
-
-    // 計算端點出口方向
-    const startDir = options.startPortOffset
-        ? getPortExitDirection(options.startPortOffset.x, options.startPortOffset.y, options.startRotation ?? 0)
-        : 'NONE' as Direction;
-
-    const endDir = options.endPortOffset
-        ? getPortExitDirection(options.endPortOffset.x, options.endPortOffset.y, options.endRotation ?? 0)
-        : 'NONE' as Direction;
-
-    // 計算延伸點 - 線路必須從端點沿著正確方向先延伸一段距離
-    const extensionDistance = gridSize * 2; // 增加延伸距離確保方向正確
-
-    // 計算起點延伸點（不做 snapToGrid 以保持方向正確）
-    let startExtX = startX;
-    let startExtY = startY;
-    if (startDir === 'N') {
-        startExtY = startY - extensionDistance;
-    } else if (startDir === 'S') {
-        startExtY = startY + extensionDistance;
-    } else if (startDir === 'E') {
-        startExtX = startX + extensionDistance;
-    } else if (startDir === 'W') {
-        startExtX = startX - extensionDistance;
-    }
-
-    // 計算終點延伸點
-    let endExtX = endX;
-    let endExtY = endY;
-    if (endDir === 'N') {
-        endExtY = endY - extensionDistance;
-    } else if (endDir === 'S') {
-        endExtY = endY + extensionDistance;
-    } else if (endDir === 'E') {
-        endExtX = endX + extensionDistance;
-    } else if (endDir === 'W') {
-        endExtX = endX - extensionDistance;
-    }
-
-    // 對齊延伸點到網格（用於 A* 路徑規劃）
-    const startExtPointSnapped = {
-        x: snapToGrid(startExtX, gridSize),
-        y: snapToGrid(startExtY, gridSize)
-    };
-    const endExtPointSnapped = {
-        x: snapToGrid(endExtX, gridSize),
-        y: snapToGrid(endExtY, gridSize)
-    };
-
-    // 從延伸點開始進行 A* 路徑規劃
-    let path = aStarOrthogonal(
-        startExtPointSnapped,
-        endExtPointSnapped,
-        ctx,
-        startDir,
-        oppositeDirection(endDir)
-    );
-
-    path = simplifyPath(path);
-    path = assignLane(path, existingWireSegments, gridSize);
-
-    // 組裝最終路徑
-    const points: number[] = [];
-
-    // 1. 始終從實際起點開始
-    points.push(startX, startY);
-
-    // 2. 強制加入起點延伸點（確保從正確方向出發）
-    if (startDir !== 'NONE') {
-        // 確保延伸點與起點形成正確方向的線段
-        if (startDir === 'N' || startDir === 'S') {
-            // 垂直方向：X 保持與起點相同
-            points.push(startX, startExtPointSnapped.y);
-        } else {
-            // 水平方向：Y 保持與起點相同
-            points.push(startExtPointSnapped.x, startY);
-        }
-    }
-
-    // 3. 加入 A* 計算的路徑
-    for (let i = 0; i < path.length; i++) {
-        const p = path[i];
-        if (!p) continue;
-        // 避免加入與最後一個點相同的點
-        if (points.length >= 2) {
-            const lastX = points[points.length - 2];
-            const lastY = points[points.length - 1];
-            if (lastX === p.x && lastY === p.y) continue;
-        }
-        points.push(p.x, p.y);
-    }
-
-    // 4. 強制加入終點延伸點（確保從正確方向進入）
-    if (endDir !== 'NONE') {
-        const lastX = points[points.length - 2];
-        const lastY = points[points.length - 1];
-
-        if (endDir === 'N' || endDir === 'S') {
-            // 垂直方向進入：X 保持與終點相同
-            if (lastX !== endX || lastY !== endExtPointSnapped.y) {
-                points.push(endX, endExtPointSnapped.y);
+        if (isTopPortConnection) {
+            // 上端點連線邏輯：從最高點開始，先水平後垂直
+            if (isStartHigher) {
+                pathPoints = [
+                    { x: startX, y: startY },
+                    { x: endX, y: startY },
+                    { x: endX, y: endY }
+                ];
+            } else {
+                pathPoints = [
+                    { x: startX, y: startY },
+                    { x: startX, y: endY },
+                    { x: endX, y: endY }
+                ];
             }
         } else {
-            // 水平方向進入：Y 保持與終點相同
-            if (lastX !== endExtPointSnapped.x || lastY !== endY) {
-                points.push(endExtPointSnapped.x, endY);
+            // 下端點連線邏輯：從最低點開始，先水平後垂直（與上端點相反）
+            if (isStartHigher) {
+                pathPoints = [
+                    { x: startX, y: startY },
+                    { x: startX, y: endY },
+                    { x: endX, y: endY }
+                ];
+            } else {
+                pathPoints = [
+                    { x: startX, y: startY },
+                    { x: endX, y: startY },
+                    { x: endX, y: endY }
+                ];
             }
         }
     }
 
-    // 5. 確保以實際終點結束
-    const finalLastX = points[points.length - 2];
-    const finalLastY = points[points.length - 1];
-    if (finalLastX !== endX || finalLastY !== endY) {
-        points.push(endX, endY);
+    // 應用分道機制避免重疊
+    const adjustedPath = applyLaneOffset(pathPoints, existingWireSegments, gridSize);
+
+    // 轉換為扁平的數字陣列
+    const result: number[] = [];
+    for (const p of adjustedPath) {
+        result.push(p.x, p.y);
     }
 
-    return points;
-    */
+    return result;
 }
