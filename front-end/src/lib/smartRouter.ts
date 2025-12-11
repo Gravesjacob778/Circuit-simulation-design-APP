@@ -608,6 +608,65 @@ export function smartOrthogonalRoute(
         endRotation?: number;
     } = {}
 ): number[] {
+    // 簡單路徑判斷：檢查是否可以使用簡化的路由邏輯
+    const yTolerance = gridSize / 2; // Y 軸容差
+    const isSameY = Math.abs(startY - endY) < yTolerance;
+
+    // 判斷起點和終點是上端點還是下端點
+    // 上端點：offsetY < 0（在元件上方）
+    // 下端點：offsetY > 0（在元件下方）
+    const isStartTopPort = options.startPortOffset ? options.startPortOffset.y < 0 : false;
+    const isEndTopPort = options.endPortOffset ? options.endPortOffset.y < 0 : false;
+
+    // 情況 1：相同 Y 軸 - 直接水平連接
+    if (isSameY) {
+        return [startX, startY, endX, startY];
+    }
+
+    // 情況 2：不同 Y 軸 - 根據端點類型決定路由方式
+    const isStartHigher = startY < endY; // Y 軸向下為正
+
+    // 判斷是上端點連線還是下端點連線
+    // 如果起點或終點任一是上端點，使用上端點邏輯
+    const isTopPortConnection = isStartTopPort || isEndTopPort;
+
+    if (isTopPortConnection) {
+        // 上端點連線邏輯：從最高點開始，先水平後垂直
+        if (isStartHigher) {
+            // 起點較高：從起點水平移動到終點 X 軸，再垂直向下
+            return [
+                startX, startY,      // 起點
+                endX, startY,        // 水平移動到終點 X 軸
+                endX, endY           // 垂直向下到終點
+            ];
+        } else {
+            // 終點較高：從起點垂直向上到終點 Y 軸，再水平移動
+            return [
+                startX, startY,      // 起點
+                startX, endY,        // 垂直向上到終點 Y 軸
+                endX, endY           // 水平移動到終點
+            ];
+        }
+    } else {
+        // 下端點連線邏輯：從最低點開始，先水平後垂直（與上端點相反）
+        if (isStartHigher) {
+            // 起點較高（終點較低）：從起點垂直向下到終點 Y 軸，再水平移動
+            return [
+                startX, startY,      // 起點
+                startX, endY,        // 垂直向下到終點 Y 軸
+                endX, endY           // 水平移動到終點
+            ];
+        } else {
+            // 終點較高（起點較低）：從起點水平移動到終點 X 軸，再垂直向上
+            return [
+                startX, startY,      // 起點
+                endX, startY,        // 水平移動到終點 X 軸
+                endX, endY           // 垂直向上到終點
+            ];
+        }
+    }
+
+    /* 原有的複雜路由邏輯保留作為備用
     const obstacles = buildObstaclesFromComponents(
         components,
         [options.startComponentId, options.endComponentId].filter(Boolean) as string[]
@@ -740,4 +799,5 @@ export function smartOrthogonalRoute(
     }
 
     return points;
+    */
 }
