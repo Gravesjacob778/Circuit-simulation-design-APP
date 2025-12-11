@@ -278,17 +278,26 @@ function drawGrid(width: number, height: number) {
   const gridSize = uiStore.gridSize;
 
   if (uiStore.showGrid) {
-    // 繪製點狀網格
+    // 繪製正方形格線網格
+    // 垂直線
     for (let x = 0; x <= width; x += gridSize) {
-      for (let y = 0; y <= height; y += gridSize) {
-        const dot = new Konva.Circle({
-          x,
-          y,
-          radius: 1,
-          fill: '#333333',
-        });
-        gridLayer.add(dot);
-      }
+      const line = new Konva.Line({
+        points: [x, 0, x, height],
+        stroke: '#333333',
+        strokeWidth: 0.5,
+        listening: false,
+      });
+      gridLayer.add(line);
+    }
+    // 水平線
+    for (let y = 0; y <= height; y += gridSize) {
+      const line = new Konva.Line({
+        points: [0, y, width, y],
+        stroke: '#333333',
+        strokeWidth: 0.5,
+        listening: false,
+      });
+      gridLayer.add(line);
     }
   }
 
@@ -806,20 +815,21 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
     renderAllWires(); // 重繪導線
   });
 
-  // 拖曳過程中也更新導線
+  // 拖曳過程中即時吸附網格並更新導線
   group.on('dragmove', () => {
-    // 臨時更新元件位置以便重繪導線
-    const tempX = group.x();
-    const tempY = group.y();
+    // 即時吸附到網格點
+    const snapped = uiStore.snapPosition(group.x(), group.y());
+    group.x(snapped.x);
+    group.y(snapped.y);
     
     // 更新輔助線位置
-    drawGuides(tempX, tempY);
+    drawGuides(snapped.x, snapped.y);
     
     // 更新 store 中的位置 (不觸發 watch)
     const comp = circuitStore.components.find(c => c.id === component.id);
     if (comp) {
-      comp.x = tempX;
-      comp.y = tempY;
+      comp.x = snapped.x;
+      comp.y = snapped.y;
     }
     renderAllWires();
   });
@@ -868,18 +878,19 @@ function updateComponentVisuals() {
       // 確保先移除可能存在的重複監聽器
       node.off('dragmove');
       node.on('dragmove', () => {
-        // 臨時更新元件位置以便重繪導線
-        const tempX = node.x();
-        const tempY = node.y();
+        // 即時吸附到網格點
+        const snapped = uiStore.snapPosition(node.x(), node.y());
+        node.x(snapped.x);
+        node.y(snapped.y);
         
         // 更新輔助線位置
-        drawGuides(tempX, tempY);
+        drawGuides(snapped.x, snapped.y);
         
         // 更新 store 中的位置 (不觸發 watch)
         const component = circuitStore.components.find(c => c.id === comp.id);
         if (component) {
-          component.x = tempX;
-          component.y = tempY;
+          component.x = snapped.x;
+          component.y = snapped.y;
         }
         renderAllWires();
       });
