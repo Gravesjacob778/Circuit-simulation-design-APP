@@ -1255,6 +1255,50 @@ onMounted(() => {
     stage.batchDraw();
   });
 
+  // 滑鼠拖曳平移畫面
+  let isPanning = false;
+  let panStartPos = { x: 0, y: 0 };
+  let stageStartPos = { x: 0, y: 0 };
+
+  stage.on('mousedown', (e) => {
+    // 只有點擊空白背景時才啟動平移
+    if (e.target === stage && !isWiring) {
+      isPanning = true;
+      panStartPos = stage.getPointerPosition() || { x: 0, y: 0 };
+      stageStartPos = { x: stage.x(), y: stage.y() };
+      document.body.style.cursor = 'grabbing';
+    }
+  });
+
+  stage.on('mousemove', (e) => {
+    if (isPanning) {
+      const pos = stage.getPointerPosition();
+      if (pos) {
+        const dx = pos.x - panStartPos.x;
+        const dy = pos.y - panStartPos.y;
+        stage.position({
+          x: stageStartPos.x + dx,
+          y: stageStartPos.y + dy,
+        });
+        stage.batchDraw();
+      }
+    }
+  });
+
+  stage.on('mouseup', () => {
+    if (isPanning) {
+      isPanning = false;
+      document.body.style.cursor = 'crosshair';
+    }
+  });
+
+  stage.on('mouseleave', () => {
+    if (isPanning) {
+      isPanning = false;
+      document.body.style.cursor = 'crosshair';
+    }
+  });
+
   // 監聽鍵盤
   window.addEventListener('keydown', handleKeyDown);
 
