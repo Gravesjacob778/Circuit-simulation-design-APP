@@ -31,7 +31,7 @@ let tempLayer: Konva.Layer; // 用於繪製中的導線
 
 // 元件 Konva 節點映射
 const componentNodes = new Map<string, Konva.Group>();
-const wireNodes = new Map<string, Konva.Line>();
+const wireNodes = new Map<string, Konva.Group>();
 
 // ========== 接線互動狀態 ==========
 interface PortInfo {
