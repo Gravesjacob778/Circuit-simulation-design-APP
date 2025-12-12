@@ -27,11 +27,6 @@
 - `drawGrid()` - 繪製網格
 - `drawWiringPreview()` - 繪製臨時接線預覽
 - `clearTempLayer()` - 清除臨時層
-- `createWiringStartMarker()` - 創建接線起點的脈衝動畫標記
-- `setPortHoverConnectable()` - 設置端點 hover 樣式（可連接）
-- `setPortHoverNotConnectable()` - 設置端點 hover 樣式（不可連接）
-- `setPortHoverNormal()` - 設置端點 hover 樣式（正常模式）
-- `resetPortStyle()` - 重置端點樣式
 
 ---
 

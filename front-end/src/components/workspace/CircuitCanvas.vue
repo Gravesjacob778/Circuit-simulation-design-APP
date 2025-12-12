@@ -10,12 +10,14 @@ import { useCircuitStore } from '@/stores/circuitStore';
 import { useUIStore } from '@/stores/uiStore';
 import type { CircuitComponent, ComponentType } from '@/types/circuit';
 import { drawComponentShape } from './renderers/componentRenderers';
-import { getRotatedPortPosition, calculateOrthogonalPath } from '@/lib/geometryUtils';
+import { getRotatedPortPosition } from '@/lib/geometryUtils';
 import { KonvaStage } from '@/utils/KonvaStage';
 import { KonvaNodeManager } from '@/utils/KonvaNodeManager';
 import { KonvaRenderer } from '@/utils/KonvaRenderer';
 import { KonvaAnimationManager } from '@/utils/KonvaAnimationManager';
+import { KonvaEventHandler } from '@/utils/KonvaEventHandler';
 import { WiringStateManager } from '@/utils/WiringStateManager';
+import { drawGuides, clearGuides, drawGrid, drawWiringPreview, clearTempLayer } from '@/utils/konvaUtils';
 
 const circuitStore = useCircuitStore();
 const uiStore = useUIStore();
@@ -33,6 +35,7 @@ let nodeManager: KonvaNodeManager | null = null;
 let wiringStateManager: WiringStateManager | null = null;
 let renderer: KonvaRenderer | null = null;
 let animationManager: KonvaAnimationManager | null = null;
+let eventHandler: KonvaEventHandler | null = null;
 
 // 層級變數 (通過 konvaStage 獲取)
 let stage: Konva.Stage | null = null;
@@ -42,101 +45,13 @@ let wireLayer: Konva.Layer | null = null;
 let componentLayer: Konva.Layer | null = null;
 let tempLayer: Konva.Layer | null = null; // 用於繪製中的導線
 
+// Stage 平移狀態
+let isPanning = false;
+let panStartPos = { x: 0, y: 0 };
+let stageStartPos = { x: 0, y: 0 };
+
 // ========== 電流動畫相關 ==========
 let currentFlowLayer: Konva.Layer | null = null;
-
-/**
- * 繪製對齊輔助線
- */
-function drawGuides(x: number, y: number) {
-  if (!guideLayer || !stage) return;
-  guideLayer.destroyChildren();
-
-  const width = stage.width();
-  const height = stage.height();
-  const gridSize = uiStore.gridSize;
-
-  // 使用半透明白色區塊作為輔助線
-  // 水平輔助帶
-  const hGuide = new Konva.Rect({
-    x: 0,
-    y: y - gridSize / 2,
-    width: width,
-    height: gridSize,
-    fill: '#ffffff',
-    opacity: 0.1, // 低透明度
-    listening: false, // 不接收事件
-  });
-
-  // 垂直輔助帶
-  const vGuide = new Konva.Rect({
-    x: x - gridSize / 2,
-    y: 0,
-    width: gridSize,
-    height: height,
-    fill: '#ffffff',
-    opacity: 0.1, // 低透明度
-    listening: false,
-  });
-
-  guideLayer.add(hGuide, vGuide);
-  guideLayer.batchDraw();
-}
-
-/**
- * 清除輔助線
- */
-function clearGuides() {
-  if (!guideLayer) return;
-  guideLayer.destroyChildren();
-  guideLayer.batchDraw();
-}
-
-/**
- * 繪製臨時接線預覽
- */
-function drawWiringPreview(targetX: number, targetY: number) {
-  if (!tempLayer || !wiringStateManager?.getStartPort()) return;
-  tempLayer.destroyChildren();
-
-  const startPort = wiringStateManager.getStartPort();
-  if (!startPort) return;
-
-  const points = calculateOrthogonalPath(
-    startPort.x, startPort.y,
-    targetX, targetY,
-    uiStore.gridSize
-  );
-
-  const previewLine = new Konva.Line({
-    points,
-    stroke: '#ffeb3b',
-    strokeWidth: 2,
-    dash: [6, 4],
-    opacity: 0.8,
-  });
-  tempLayer.add(previewLine);
-
-  // 起點圓點
-  const startDot = new Konva.Circle({
-    x: startPort.x,
-    y: startPort.y,
-    radius: 6,
-    fill: '#ffeb3b',
-  });
-  tempLayer.add(startDot);
-
-  tempLayer.batchDraw();
-}
-
-/**
- * 清除臨時層
- */
-function clearTempLayer() {
-  if (!tempLayer) return;
-  tempLayer.destroyChildren();
-  tempLayer.batchDraw();
-}
 
 /**
  * 處理端點點擊 - 開始或完成接線
@@ -201,7 +116,7 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
         (tempLayer as any)._pulseAnimation.stop();
         (tempLayer as any)._pulseAnimation = null;
       }
-      clearTempLayer();
+      clearTempLayer(tempLayer);
       return;
     }
 
@@ -225,42 +140,66 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
       (tempLayer as any)._pulseAnimation.stop();
       (tempLayer as any)._pulseAnimation = null;
     }
-    clearTempLayer();
+    clearTempLayer(tempLayer);
   }
 }
 
-// 繪製網格
-function drawGrid(width: number, height: number) {
-  if (!gridLayer) return;
-  gridLayer.destroyChildren();
+/**
+ * 端點事件回調（由 KonvaEventHandler 觸發）
+ */
+function handlePortEventClick(componentId: string, portId: string) {
+  const component = circuitStore.components.find(c => c.id === componentId);
+  const port = component?.ports.find(p => p.id === portId);
+  if (!component || !port) return;
 
-  const gridSize = uiStore.gridSize;
+  const portGlobalPos = getRotatedPortPosition(
+    component.x,
+    component.y,
+    port.offsetX,
+    port.offsetY,
+    component.rotation
+  );
+  handlePortClick(componentId, portId, portGlobalPos.x, portGlobalPos.y);
+}
 
-  if (uiStore.showGrid) {
-    // 繪製正方形格線網格
-    // 垂直線
-    for (let x = 0; x <= width; x += gridSize) {
-      const line = new Konva.Line({
-        points: [x, 0, x, height],
-        stroke: '#333333',
-        strokeWidth: 0.5,
-        listening: false,
-      });
-      gridLayer.add(line);
+function handlePortMouseEnter(componentId: string, portId: string, portShape: Konva.Circle) {
+  if (wiringStateManager?.isInWiringMode()) {
+    const isSamePort = wiringStateManager.isSamePort(componentId, portId);
+
+    if (isSamePort) {
+      portShape.radius(6);
+      portShape.stroke('#f44336');
+      portShape.strokeWidth(2);
+      portShape.shadowBlur(0);
+      document.body.style.cursor = 'not-allowed';
+    } else {
+      portShape.radius(7);
+      portShape.stroke('#4caf50');
+      portShape.strokeWidth(3);
+      portShape.shadowColor('#4caf50');
+      portShape.shadowBlur(10);
+      document.body.style.cursor = 'pointer';
     }
-    // 水平線
-    for (let y = 0; y <= height; y += gridSize) {
-      const line = new Konva.Line({
-        points: [0, y, width, y],
-        stroke: '#333333',
-        strokeWidth: 0.5,
-        listening: false,
-      });
-      gridLayer.add(line);
-    }
+  } else {
+    portShape.radius(6);
+    portShape.stroke('#ffeb3b');
+    portShape.strokeWidth(2);
+    portShape.shadowBlur(0);
+    document.body.style.cursor = 'pointer';
   }
 
-  gridLayer.batchDraw();
+  componentLayer?.batchDraw();
+}
+
+function handlePortMouseLeave(componentId: string, _portId: string, portShape: Konva.Circle) {
+  portShape.radius(4);
+  portShape.stroke(portShape.fill() as string);
+  portShape.strokeWidth(1);
+  portShape.shadowBlur(0);
+  componentLayer?.batchDraw();
+
+  const comp = circuitStore.components.find(c => c.id === componentId);
+  document.body.style.cursor = comp?.selected ? 'move' : 'crosshair';
 }
 
 // 建立元件的 Konva 節點
@@ -276,111 +215,33 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
   // 繪製元件形狀
   drawComponentShape(group, component);
 
-  // 為每個端點添加點擊事件
+  // 端點事件交給 KonvaEventHandler
   const portCircles = group.find('.port');
   if (portCircles && portCircles.length > 0) {
     portCircles.forEach((portShape, index) => {
       const port = component.ports[index];
       if (!port) return;
 
-      portShape.on('click tap', (e) => {
-        e.cancelBubble = true;
-        // 計算端點的全域座標（考慮旋轉）
-        const portGlobalPos = getRotatedPortPosition(
-          component.x,
-          component.y,
-          port.offsetX,
-          port.offsetY,
-          component.rotation
-        );
-        handlePortClick(component.id, port.id, portGlobalPos.x, portGlobalPos.y);
-      });
+      const portGlobalPos = getRotatedPortPosition(
+        component.x,
+        component.y,
+        port.offsetX,
+        port.offsetY,
+        component.rotation
+      );
 
-      // hover 效果
-      portShape.on('mouseenter', () => {
-        // 在接線模式下，高亮可連接的端點
-        if (wiringStateManager?.isInWiringMode()) {
-          // 不能連接到同一個端點
-          const isSamePort = wiringStateManager.isSamePort(component.id, port.id);
-          
-          if (isSamePort) {
-            // 同一個端點顯示紅色（不可連接）
-            (portShape as Konva.Circle).radius(6);
-            (portShape as Konva.Circle).stroke('#f44336');
-            (portShape as Konva.Circle).strokeWidth(2);
-            document.body.style.cursor = 'not-allowed';
-          } else {
-            // 可連接的端點顯示綠色
-            (portShape as Konva.Circle).radius(7);
-            (portShape as Konva.Circle).stroke('#4caf50');
-            (portShape as Konva.Circle).strokeWidth(3);
-            (portShape as Konva.Circle).shadowColor('#4caf50');
-            (portShape as Konva.Circle).shadowBlur(10);
-            document.body.style.cursor = 'pointer';
-          }
-        } else {
-          // 非接線模式的正常 hover 效果
-          (portShape as Konva.Circle).radius(6);
-          (portShape as Konva.Circle).stroke('#ffeb3b');
-          (portShape as Konva.Circle).strokeWidth(2);
-          document.body.style.cursor = 'pointer';
-        }
-        componentLayer?.batchDraw();
-      });
-
-      portShape.on('mouseleave', () => {
-        (portShape as Konva.Circle).radius(4);
-        (portShape as Konva.Circle).stroke((portShape as Konva.Circle).fill() as string);
-        (portShape as Konva.Circle).strokeWidth(1);
-        (portShape as Konva.Circle).shadowBlur(0);
-        componentLayer?.batchDraw();
-        document.body.style.cursor = 'crosshair';
-      });
+      eventHandler?.bindPortEvents(
+        portShape as Konva.Circle,
+        component.id,
+        port.id,
+        portGlobalPos.x,
+        portGlobalPos.y
+      );
     });
   }
 
-  // 拖曳結束時吸附網格並更新導線
-  group.on('dragend', () => {
-    const snapped = uiStore.snapPosition(group.x(), group.y());
-    group.x(snapped.x);
-    group.y(snapped.y);
-    circuitStore.updateComponentPosition(component.id, snapped.x, snapped.y);
-    renderAllWires(); // 重繪導線
-  });
-
-  // 拖曳過程中即時吸附網格並更新導線
-  group.on('dragmove', () => {
-    // 即時吸附到網格點
-    const snapped = uiStore.snapPosition(group.x(), group.y());
-    group.x(snapped.x);
-    group.y(snapped.y);
-    
-    // 更新輔助線位置
-    drawGuides(snapped.x, snapped.y);
-    
-    // 更新 store 中的位置 (不觸發 watch)
-    const comp = circuitStore.components.find(c => c.id === component.id);
-    if (comp) {
-      comp.x = snapped.x;
-      comp.y = snapped.y;
-    }
-    renderAllWires();
-  });
-
-  // 點擊選取（非端點區域）
-  group.on('click tap', (e) => {
-    // 如果點擊的是端點，不處理
-    if ((e.target as Konva.Node).name() === 'port') return;
-    if (wiringStateManager?.isInWiringMode()) return; // 接線模式不選取
-
-    e.cancelBubble = true;
-    circuitStore.selectComponent(component.id);
-    updateComponentVisuals();
-    renderAllWires();
-
-    // 滑鼠游標改為移動游標
-    document.body.style.cursor = 'move';
-  });
+  // 元件事件交給 KonvaEventHandler
+  eventHandler?.bindComponentEvents(group, component);
 
   return group;
 }
@@ -393,42 +254,10 @@ function updateComponentVisuals() {
       // 更新拖拉狀態：只有選取的元件才能拖拉
       node.draggable(comp.selected && !wiringStateManager?.isInWiringMode());
       
-      // 更新游標樣式
       if (comp.selected) {
         // 選取時繪製輔助線
-        drawGuides(comp.x, comp.y);
-        
-        node.on('mouseenter', () => {
-          if (!wiringStateManager?.isInWiringMode()) document.body.style.cursor = 'move';
-        });
-        node.on('mouseleave', () => {
-          document.body.style.cursor = 'crosshair';
-        });
-      } else {
-        node.off('mouseenter');
-        node.off('mouseleave');
-        // 沒有選取時清除輔助線（如果在遍歷中，可能需要在外部處理，但因為這裡是對forEach，我們可以檢查 selectedComponentId）
+        drawGuides(guideLayer, stage, comp.x, comp.y, uiStore.gridSize);
       }
-      
-      // 確保先移除可能存在的重複監聽器
-      node.off('dragmove');
-      node.on('dragmove', () => {
-        // 即時吸附到網格點
-        const snapped = uiStore.snapPosition(node.x(), node.y());
-        node.x(snapped.x);
-        node.y(snapped.y);
-        
-        // 更新輔助線位置
-        drawGuides(snapped.x, snapped.y);
-        
-        // 更新 store 中的位置 (不觸發 watch)
-        const component = circuitStore.components.find(c => c.id === comp.id);
-        if (component) {
-          component.x = snapped.x;
-          component.y = snapped.y;
-        }
-        renderAllWires();
-      });
       
       // 重新繪製以顯示高亮效果
       node.destroyChildren();
@@ -441,57 +270,21 @@ function updateComponentVisuals() {
           const port = comp.ports[index];
           if (!port) return;
 
-          portShape.on('click tap', (e) => {
-            e.cancelBubble = true;
-            const portGlobalPos = getRotatedPortPosition(
-              comp.x,
-              comp.y,
-              port.offsetX,
-              port.offsetY,
-              comp.rotation
-            );
-            handlePortClick(comp.id, port.id, portGlobalPos.x, portGlobalPos.y);
-          });
+          const portGlobalPos = getRotatedPortPosition(
+            comp.x,
+            comp.y,
+            port.offsetX,
+            port.offsetY,
+            comp.rotation
+          );
 
-          portShape.on('mouseenter', () => {
-            // 在接線模式下，高亮可連接的端點
-            if (wiringStateManager?.isInWiringMode()) {
-              // 不能連接到同一個端點
-              const isSamePort = wiringStateManager.isSamePort(comp.id, port.id);
-              
-              if (isSamePort) {
-                // 同一個端點顯示紅色（不可連接）
-                (portShape as Konva.Circle).radius(6);
-                (portShape as Konva.Circle).stroke('#f44336');
-                (portShape as Konva.Circle).strokeWidth(2);
-                document.body.style.cursor = 'not-allowed';
-              } else {
-                // 可連接的端點顯示綠色
-                (portShape as Konva.Circle).radius(7);
-                (portShape as Konva.Circle).stroke('#4caf50');
-                (portShape as Konva.Circle).strokeWidth(3);
-                (portShape as Konva.Circle).shadowColor('#4caf50');
-                (portShape as Konva.Circle).shadowBlur(10);
-                document.body.style.cursor = 'pointer';
-              }
-            } else {
-              // 非接線模式的正常 hover 效果
-              (portShape as Konva.Circle).radius(6);
-              (portShape as Konva.Circle).stroke('#ffeb3b');
-              (portShape as Konva.Circle).strokeWidth(2);
-              document.body.style.cursor = 'pointer';
-            }
-            componentLayer?.batchDraw();
-          });
-
-          portShape.on('mouseleave', () => {
-            (portShape as Konva.Circle).radius(4);
-            (portShape as Konva.Circle).stroke((portShape as Konva.Circle).fill() as string);
-            (portShape as Konva.Circle).strokeWidth(1);
-            (portShape as Konva.Circle).shadowBlur(0);
-            componentLayer?.batchDraw();
-            document.body.style.cursor = comp.selected ? 'move' : 'crosshair';
-          });
+          eventHandler?.bindPortEvents(
+            portShape as Konva.Circle,
+            comp.id,
+            port.id,
+            portGlobalPos.x,
+            portGlobalPos.y
+          );
         });
       }
     }
@@ -499,10 +292,64 @@ function updateComponentVisuals() {
   
   // 檢查是否有選取的元件，如果沒有則清除輔助線
   if (!circuitStore.selectedComponentId) {
-    clearGuides();
+    clearGuides(guideLayer);
   }
   
   componentLayer?.batchDraw();
+}
+
+/**
+ * 元件事件回調（由 KonvaEventHandler 觸發）
+ */
+function handleComponentClick(component: CircuitComponent, e: Konva.KonvaEventObject<MouseEvent>) {
+  if (wiringStateManager?.isInWiringMode()) return; // 接線模式不選取
+
+  e.cancelBubble = true;
+  circuitStore.selectComponent(component.id);
+  updateComponentVisuals();
+  renderAllWires();
+  document.body.style.cursor = 'move';
+}
+
+function handleComponentDragMove(component: CircuitComponent) {
+  const node = nodeManager?.getComponentNode(component.id);
+  if (!node) return;
+
+  const snapped = uiStore.snapPosition(node.x(), node.y());
+  node.x(snapped.x);
+  node.y(snapped.y);
+
+  drawGuides(guideLayer, stage, snapped.x, snapped.y, uiStore.gridSize);
+
+  // 直接更新 store 中的位置（避免觸發整體重新渲染）
+  component.x = snapped.x;
+  component.y = snapped.y;
+
+  renderAllWires();
+}
+
+function handleComponentDragEnd(component: CircuitComponent) {
+  const node = nodeManager?.getComponentNode(component.id);
+  if (!node) return;
+
+  const snapped = uiStore.snapPosition(node.x(), node.y());
+  node.x(snapped.x);
+  node.y(snapped.y);
+
+  circuitStore.updateComponentPosition(component.id, snapped.x, snapped.y);
+  renderAllWires();
+}
+
+function handleComponentMouseEnter(component: CircuitComponent) {
+  if (component.selected && !wiringStateManager?.isInWiringMode()) {
+    document.body.style.cursor = 'move';
+  }
+}
+
+function handleComponentMouseLeave() {
+  if (!wiringStateManager?.isInWiringMode()) {
+    document.body.style.cursor = 'crosshair';
+  }
 }
 
 // 重新繪製所有元件
@@ -574,16 +421,95 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
         (tempLayer as any)._pulseAnimation.stop();
         (tempLayer as any)._pulseAnimation = null;
       }
-      clearTempLayer();
+      clearTempLayer(tempLayer);
       return;
     }
     
     circuitStore.selectComponent(null);
     circuitStore.selectWire(null);
-    clearGuides(); // 清除輔助線
+    clearGuides(guideLayer); // 清除輔助線
     updateComponentVisuals();
     renderAllWires();
     // 恢復預設游標
+    document.body.style.cursor = 'crosshair';
+  }
+}
+
+function handleStageMouseMove() {
+  if (!stage) return;
+
+  const pos = stage.getPointerPosition();
+  if (!pos) return;
+
+  // 平移畫面
+  if (isPanning) {
+    const dx = pos.x - panStartPos.x;
+    const dy = pos.y - panStartPos.y;
+    stage.position({
+      x: stageStartPos.x + dx,
+      y: stageStartPos.y + dy,
+    });
+    stage.batchDraw();
+  }
+
+  // 接線預覽
+  if (wiringStateManager?.isInWiringMode()) {
+    const snappedPos = uiStore.snapPosition(pos.x, pos.y);
+    drawWiringPreview(tempLayer, wiringStateManager?.getStartPort() || null, snappedPos.x, snappedPos.y, uiStore.gridSize);
+  }
+}
+
+function handleStageWheel(e: Konva.KonvaEventObject<WheelEvent>) {
+  if (!stage) return;
+
+  e.evt.preventDefault();
+
+  const scaleBy = 1.1;
+  const oldScale = stage.scaleX();
+
+  const pointer = stage.getPointerPosition();
+  if (!pointer) return;
+
+  const mousePointTo = {
+    x: (pointer.x - stage.x()) / oldScale,
+    y: (pointer.y - stage.y()) / oldScale,
+  };
+
+  const direction = e.evt.deltaY > 0 ? -1 : 1;
+  const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+  const clampedScale = Math.max(0.1, Math.min(5, newScale));
+
+  stage.scale({ x: clampedScale, y: clampedScale });
+
+  const newPos = {
+    x: pointer.x - mousePointTo.x * clampedScale,
+    y: pointer.y - mousePointTo.y * clampedScale,
+  };
+  stage.position(newPos);
+  stage.batchDraw();
+}
+
+function handleStageMouseDown(e: Konva.KonvaEventObject<MouseEvent>) {
+  if (!stage) return;
+
+  if (e.target === stage && !wiringStateManager?.isInWiringMode()) {
+    isPanning = true;
+    panStartPos = stage.getPointerPosition() || { x: 0, y: 0 };
+    stageStartPos = { x: stage.x(), y: stage.y() };
+    document.body.style.cursor = 'grabbing';
+  }
+}
+
+function handleStageMouseUp() {
+  if (isPanning) {
+    isPanning = false;
+    document.body.style.cursor = 'crosshair';
+  }
+}
+
+function handleStageMouseLeave() {
+  if (isPanning) {
+    isPanning = false;
     document.body.style.cursor = 'crosshair';
   }
 }
@@ -600,12 +526,12 @@ function handleKeyDown(e: KeyboardEvent) {
         (tempLayer as any)._pulseAnimation.stop();
         (tempLayer as any)._pulseAnimation = null;
       }
-      clearTempLayer();
+      clearTempLayer(tempLayer);
       return;
     }
     circuitStore.selectComponent(null);
     circuitStore.selectWire(null);
-    clearGuides(); // 清除輔助線
+    clearGuides(guideLayer); // 清除輔助線
     updateComponentVisuals();
     renderAllWires();
     return;
@@ -679,100 +605,31 @@ onMounted(() => {
   wiringStateManager = new WiringStateManager();
 
   // 繪製網格
-  drawGrid(width, height);
+  drawGrid(gridLayer, width, height, uiStore.gridSize, uiStore.showGrid);
 
-  // 綁定事件
-  stage.on('click', handleStageClick);
-  
-  // 滑鼠移動事件 - 用於接線預覽
-  stage.on('mousemove', () => {
-    if (wiringStateManager?.isInWiringMode()) {
-      const pos = stage!.getPointerPosition();
-      if (pos) {
-        // 將目標點吸附到網格，確保轉角對齊
-        const snappedPos = uiStore.snapPosition(pos.x, pos.y);
-        drawWiringPreview(snappedPos.x, snappedPos.y);
-      }
-    }
+  // 初始化 KonvaEventHandler 並綁定事件
+  eventHandler = new KonvaEventHandler();
+  eventHandler.setStageCallbacks({
+    onStageClick: handleStageClick,
+    onStageMouseMove: handleStageMouseMove,
+    onStageMouseDown: handleStageMouseDown,
+    onStageMouseUp: handleStageMouseUp,
+    onStageMouseLeave: handleStageMouseLeave,
+    onStageWheel: handleStageWheel,
   });
-
-  // 滑鼠滾輪事件 - 畫面縮放
-  stage!.on('wheel', (e) => {
-    e.evt.preventDefault(); // 防止頁面滾動
-    
-    const scaleBy = 1.1; // 縮放係數
-    const oldScale = stage!.scaleX(); // 當前縮放比例
-    
-    const pointer = stage!.getPointerPosition();
-    if (!pointer) return;
-    
-    // 計算滑鼠相對於 stage 的位置
-    const mousePointTo = {
-      x: (pointer.x - stage!.x()) / oldScale,
-      y: (pointer.y - stage!.y()) / oldScale,
-    };
-    
-    // 根據滾輪方向計算新的縮放比例
-    const direction = e.evt.deltaY > 0 ? -1 : 1;
-    const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
-    
-    // 限制縮放範圍 (0.1x ~ 5x)
-    const clampedScale = Math.max(0.1, Math.min(5, newScale));
-    
-    stage!.scale({ x: clampedScale, y: clampedScale });
-    
-    // 調整 stage 位置，使縮放以滑鼠位置為中心
-    const newPos = {
-      x: pointer.x - mousePointTo.x * clampedScale,
-      y: pointer.y - mousePointTo.y * clampedScale,
-    };
-    stage!.position(newPos);
-    stage!.batchDraw();
+  eventHandler.setComponentCallbacks({
+    onComponentClick: handleComponentClick,
+    onComponentDragMove: handleComponentDragMove,
+    onComponentDragEnd: handleComponentDragEnd,
+    onComponentMouseEnter: handleComponentMouseEnter,
+    onComponentMouseLeave: handleComponentMouseLeave,
   });
-
-  // 滑鼠拖曳平移畫面
-  let isPanning = false;
-  let panStartPos = { x: 0, y: 0 };
-  let stageStartPos = { x: 0, y: 0 };
-
-  stage.on('mousedown', (e) => {
-    // 只有點擊空白背景時才啟動平移
-    if (e.target === stage && !wiringStateManager?.isInWiringMode()) {
-      isPanning = true;
-      panStartPos = stage!.getPointerPosition() || { x: 0, y: 0 };
-      stageStartPos = { x: stage!.x(), y: stage!.y() };
-      document.body.style.cursor = 'grabbing';
-    }
+  eventHandler.setPortCallbacks({
+    onPortClick: handlePortEventClick,
+    onPortMouseEnter: handlePortMouseEnter,
+    onPortMouseLeave: handlePortMouseLeave,
   });
-
-  stage.on('mousemove', () => {
-    if (isPanning) {
-      const pos = stage!.getPointerPosition();
-      if (pos) {
-        const dx = pos.x - panStartPos.x;
-        const dy = pos.y - panStartPos.y;
-        stage!.position({
-          x: stageStartPos.x + dx,
-          y: stageStartPos.y + dy,
-        });
-        stage!.batchDraw();
-      }
-    }
-  });
-
-  stage.on('mouseup', () => {
-    if (isPanning) {
-      isPanning = false;
-      document.body.style.cursor = 'crosshair';
-    }
-  });
-
-  stage.on('mouseleave', () => {
-    if (isPanning) {
-      isPanning = false;
-      document.body.style.cursor = 'crosshair';
-    }
-  });
+  eventHandler.bindStageEvents(stage!);
 
   // 監聽鍵盤
   window.addEventListener('keydown', handleKeyDown);
@@ -784,7 +641,7 @@ onMounted(() => {
       const newHeight = containerRef.value.clientHeight;
       stage!.width(newWidth);
       stage!.height(newHeight);
-      drawGrid(newWidth, newHeight);
+      drawGrid(gridLayer, newWidth, newHeight, uiStore.gridSize, uiStore.showGrid);
     }
   });
   resizeObserver.observe(containerRef.value);
@@ -820,7 +677,7 @@ watch(
   () => uiStore.showGrid,
   () => {
     if (containerRef.value) {
-      drawGrid(containerRef.value.clientWidth, containerRef.value.clientHeight);
+      drawGrid(gridLayer, containerRef.value.clientWidth, containerRef.value.clientHeight, uiStore.gridSize, uiStore.showGrid);
     }
   }
 );
@@ -848,6 +705,10 @@ watch(
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
   animationManager?.destroy();
+  if (stage && eventHandler) {
+    eventHandler.unbindStageEvents(stage);
+    eventHandler.clearCallbacks();
+  }
   stage?.destroy();
 });
 </script>
