@@ -14,6 +14,7 @@ import { getRotatedPortPosition, calculateOrthogonalPath } from '@/lib/geometryU
 import { KonvaStage } from '@/utils/KonvaStage';
 import { KonvaNodeManager } from '@/utils/KonvaNodeManager';
 import { KonvaRenderer } from '@/utils/KonvaRenderer';
+import { KonvaAnimationManager } from '@/utils/KonvaAnimationManager';
 import { WiringStateManager } from '@/utils/WiringStateManager';
 
 const circuitStore = useCircuitStore();
@@ -31,6 +32,7 @@ let konvaStage: KonvaStage | null = null;
 let nodeManager: KonvaNodeManager | null = null;
 let wiringStateManager: WiringStateManager | null = null;
 let renderer: KonvaRenderer | null = null;
+let animationManager: KonvaAnimationManager | null = null;
 
 // 層級變數 (通過 konvaStage 獲取)
 let stage: Konva.Stage | null = null;
@@ -42,8 +44,6 @@ let tempLayer: Konva.Layer | null = null; // 用於繪製中的導線
 
 // ========== 電流動畫相關 ==========
 let currentFlowLayer: Konva.Layer | null = null;
-let currentFlowAnimation: Konva.Animation | null = null;
-const currentFlowParticles: Konva.Circle[] = [];
 
 /**
  * 繪製對齊輔助線
@@ -371,7 +371,13 @@ function createComponentNode(component: CircuitComponent): Konva.Group {
   group.on('click tap', (e) => {
     // 如果點擊的是端點，不處理
     if ((e.target as Konva.Node).name() === 'port') return;
-      if (wiringStateManager?.isInWiringMode()) return; // 接線模式不選取
+    if (wiringStateManager?.isInWiringMode()) return; // 接線模式不選取
+
+    e.cancelBubble = true;
+    circuitStore.selectComponent(component.id);
+    updateComponentVisuals();
+    renderAllWires();
+
     // 滑鼠游標改為移動游標
     document.body.style.cursor = 'move';
   });
@@ -528,324 +534,14 @@ function renderAllWires() {
   );
 
   // 如果電流動畫正在運行，重新初始化粒子
-  if (circuitStore.isCurrentAnimating) {
-    initCurrentFlowParticles();
-  }
-}
-
-// ========== 電流流動動畫 ==========
-
-/**
- * 計算導線路徑總長度
- */
-function calculatePathLength(points: number[]): number {
-  let length = 0;
-  for (let i = 0; i < points.length - 2; i += 2) {
-    const p1x = points[i] ?? 0;
-    const p1y = points[i + 1] ?? 0;
-    const p2x = points[i + 2] ?? 0;
-    const p2y = points[i + 3] ?? 0;
-    const dx = p2x - p1x;
-    const dy = p2y - p1y;
-    length += Math.sqrt(dx * dx + dy * dy);
-  }
-  return length;
-}
-
-/**
- * 根據距離比例取得路徑上的位置
- */
-function getPositionOnPath(points: number[], distance: number): { x: number; y: number } {
-  let accumulated = 0;
-  
-  for (let i = 0; i < points.length - 2; i += 2) {
-    const x1 = points[i] ?? 0;
-    const y1 = points[i + 1] ?? 0;
-    const x2 = points[i + 2] ?? 0;
-    const y2 = points[i + 3] ?? 0;
-    
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const segmentLength = Math.sqrt(dx * dx + dy * dy);
-    
-    if (accumulated + segmentLength >= distance) {
-      const t = (distance - accumulated) / segmentLength;
-      return {
-        x: x1 + dx * t,
-        y: y1 + dy * t,
-      };
-    }
-    
-    accumulated += segmentLength;
-  }
-  
-  // 如果距離超過總長度，返回終點
-  return {
-    x: points[points.length - 2] ?? 0,
-    y: points[points.length - 1] ?? 0,
-  };
-}
-
-/**
- * 取得所有導線的路徑點（包含方向資訊）
- */
-interface WirePathInfo {
-  wireId: string;
-  points: number[];
-  length: number;
-  fromComponentId: string;
-  fromPortId: string;
-  toComponentId: string;
-  toPortId: string;
-  direction: 1 | -1; // 1 = 正向流動 (from -> to), -1 = 反向流動 (to -> from)
-}
-
-function getAllWirePathsWithDirection(): WirePathInfo[] {
-  const paths: WirePathInfo[] = [];
-  
-  // 找到電源元件
-  const powerSources = circuitStore.components.filter(
-    c => c.type === 'dc_source' || c.type === 'ac_source'
-  );
-  
-  if (powerSources.length === 0) {
-    // 沒有電源，使用預設方向（全部正向）
-    nodeManager?.forEachWireNode((wireGroup, wireId) => {
-      const line = wireGroup.findOne('Line') as Konva.Line;
-      if (line) {
-        const points = line.points();
-        const length = calculatePathLength(points);
-        const wire = circuitStore.wires.find(w => w.id === wireId);
-        if (length > 0 && wire) {
-          paths.push({
-            wireId,
-            points,
-            length,
-            fromComponentId: wire.fromComponentId,
-            fromPortId: wire.fromPortId,
-            toComponentId: wire.toComponentId,
-            toPortId: wire.toPortId,
-            direction: 1,
-          });
-        }
-      }
-    });
-    return paths;
-  }
-  
-  // 從電源正極開始追蹤電流路徑
-  const primarySource = powerSources[0]!;
-  const positivePort = primarySource.ports.find(p => p.name === '+');
-  
-  if (!positivePort) {
-    // 沒有正極端口，使用預設方向
-    return getDefaultDirectionPaths();
-  }
-  
-  // 使用 BFS 追蹤電流路徑，從正極出發
-  const visited = new Set<string>();
-  const wireDirections = new Map<string, 1 | -1>();
-  
-  // 追蹤函數：從某個元件的某個端口開始追蹤
-  function traceCurrentPath(componentId: string, portId: string, visitedWires: Set<string>) {
-    const key = `${componentId}:${portId}`;
-    if (visited.has(key)) return;
-    visited.add(key);
-    
-    // 找到連接到這個端口的導線
-    const connectedWires = circuitStore.wires.filter(w => 
-      (w.fromComponentId === componentId && w.fromPortId === portId) ||
-      (w.toComponentId === componentId && w.toPortId === portId)
+  if (circuitStore.isCurrentAnimating && animationManager && nodeManager) {
+    const paths = animationManager.getAllWirePathsWithDirection(
+      circuitStore.components,
+      circuitStore.wires,
+      nodeManager
     );
-    
-    for (const wire of connectedWires) {
-      if (visitedWires.has(wire.id)) continue;
-      visitedWires.add(wire.id);
-      
-      // 決定電流在這條導線的方向
-      // 如果電流從 from 端進入，則方向為正向 (1)
-      // 如果電流從 to 端進入，則方向為反向 (-1)
-      const isFromEnd = wire.fromComponentId === componentId && wire.fromPortId === portId;
-      const direction: 1 | -1 = isFromEnd ? 1 : -1;
-      wireDirections.set(wire.id, direction);
-      
-      // 繼續追蹤到另一端
-      const nextComponentId = isFromEnd ? wire.toComponentId : wire.fromComponentId;
-      const nextPortId = isFromEnd ? wire.toPortId : wire.fromPortId;
-      
-      // 找到下一個元件的其他端口繼續追蹤
-      const nextComponent = circuitStore.components.find(c => c.id === nextComponentId);
-      if (nextComponent) {
-        // 對於被動元件（電阻、電容等），電流從一端進入會從另一端出去
-        for (const port of nextComponent.ports) {
-          if (port.id !== nextPortId) {
-            traceCurrentPath(nextComponentId, port.id, visitedWires);
-          }
-        }
-      }
-    }
+    animationManager.reinitializeParticles(paths);
   }
-  
-  // 從電源正極開始追蹤
-  traceCurrentPath(primarySource.id, positivePort.id, new Set());
-  
-  // 建立帶方向的路徑陣列
-  nodeManager?.forEachWireNode((wireGroup, wireId) => {
-    const line = wireGroup.findOne('Line') as Konva.Line;
-    if (line) {
-      const points = line.points();
-      const length = calculatePathLength(points);
-      const wire = circuitStore.wires.find(w => w.id === wireId);
-      if (length > 0 && wire) {
-        const direction = wireDirections.get(wireId) ?? 1;
-        paths.push({
-          wireId,
-          points,
-          length,
-          fromComponentId: wire.fromComponentId,
-          fromPortId: wire.fromPortId,
-          toComponentId: wire.toComponentId,
-          toPortId: wire.toPortId,
-          direction,
-        });
-      }
-    }
-  });
-  
-  return paths;
-}
-
-/**
- * 取得預設方向的路徑（全部正向）
- */
-function getDefaultDirectionPaths(): WirePathInfo[] {
-  const paths: WirePathInfo[] = [];
-  
-  nodeManager?.forEachWireNode((wireGroup, wireId) => {
-    const line = wireGroup.findOne('Line') as Konva.Line;
-    if (line) {
-      const points = line.points();
-      const length = calculatePathLength(points);
-      const wire = circuitStore.wires.find(w => w.id === wireId);
-      if (length > 0 && wire) {
-        paths.push({
-          wireId,
-          points,
-          length,
-          fromComponentId: wire.fromComponentId,
-          fromPortId: wire.fromPortId,
-          toComponentId: wire.toComponentId,
-          toPortId: wire.toPortId,
-          direction: 1,
-        });
-      }
-    }
-  });
-  
-  return paths;
-}
-
-/**
- * 初始化電流粒子
- */
-function initCurrentFlowParticles() {
-  if (!currentFlowLayer) return;
-  
-  // 清除現有粒子
-  currentFlowLayer.destroyChildren();
-  currentFlowParticles.length = 0;
-  
-  const paths = getAllWirePathsWithDirection();
-  const particleSpacing = 30; // 粒子間距
-  
-  paths.forEach((path) => {
-    const numParticles = Math.max(2, Math.floor(path.length / particleSpacing));
-    
-    for (let i = 0; i < numParticles; i++) {
-      const particle = new Konva.Circle({
-        radius: 3,
-        fill: '#00ffff',
-        shadowColor: '#00ffff',
-        shadowBlur: 8,
-        shadowOpacity: 0.8,
-        opacity: 0.9,
-      });
-      
-      // 儲存路徑資訊到粒子（包含方向）
-      (particle as any).__pathData = {
-        points: path.points,
-        length: path.length,
-        offset: (i / numParticles) * path.length, // 初始偏移
-        direction: path.direction, // 流動方向
-      };
-      
-      currentFlowParticles.push(particle);
-      currentFlowLayer!.add(particle);
-    }
-  });
-  
-  currentFlowLayer!.batchDraw();
-}
-
-/**
- * 啟動電流流動動畫
- */
-function startCurrentFlowAnimation() {
-  if (currentFlowAnimation) {
-    currentFlowAnimation.stop();
-  }
-  
-  initCurrentFlowParticles();
-  
-  const speed = 60; // 像素/秒
-  
-  currentFlowAnimation = new Konva.Animation((frame) => {
-    if (!frame) return;
-    
-    const elapsedMs = frame.timeDiff;
-    const distanceMoved = (speed * elapsedMs) / 1000;
-    
-    currentFlowParticles.forEach((particle) => {
-      const pathData = (particle as any).__pathData;
-      if (!pathData) return;
-      
-      // 根據方向更新偏移
-      if (pathData.direction === 1) {
-        // 正向：offset 增加
-        pathData.offset = (pathData.offset + distanceMoved) % pathData.length;
-      } else {
-        // 反向：offset 減少（從終點往起點移動）
-        pathData.offset = pathData.offset - distanceMoved;
-        if (pathData.offset < 0) {
-          pathData.offset += pathData.length;
-        }
-      }
-      
-      // 計算新位置
-      const pos = getPositionOnPath(pathData.points, pathData.offset);
-      particle.x(pos.x);
-      particle.y(pos.y);
-    });
-  }, currentFlowLayer);
-  
-  currentFlowAnimation.start();
-}
-
-/**
- * 停止電流流動動畫
- */
-function stopCurrentFlowAnimation() {
-  if (currentFlowAnimation) {
-    currentFlowAnimation.stop();
-    currentFlowAnimation = null;
-  }
-  
-  // 清除粒子
-  if (currentFlowLayer) {
-    currentFlowLayer.destroyChildren();
-    currentFlowLayer.batchDraw();
-  }
-  currentFlowParticles.length = 0;
 }
 
 // 處理 Drop 事件
@@ -963,6 +659,21 @@ onMounted(() => {
 
   // 初始化 KonvaRenderer
   renderer = new KonvaRenderer(nodeManager);
+
+  // 初始化 KonvaAnimationManager
+  animationManager = new KonvaAnimationManager();
+  animationManager.initialize(currentFlowLayer!);
+
+  // 若掛載時已處於動畫狀態，立即啟動
+  if (circuitStore.isCurrentAnimating && nodeManager) {
+    const paths = animationManager.getAllWirePathsWithDirection(
+      circuitStore.components,
+      circuitStore.wires,
+      nodeManager
+    );
+    animationManager.createParticles(paths);
+    animationManager.start();
+  }
 
   // 初始化 WiringStateManager
   wiringStateManager = new WiringStateManager();
@@ -1118,17 +829,25 @@ watch(
 watch(
   () => circuitStore.isCurrentAnimating,
   (isAnimating) => {
+    if (!animationManager || !nodeManager) return;
+
     if (isAnimating) {
-      startCurrentFlowAnimation();
+      const paths = animationManager.getAllWirePathsWithDirection(
+        circuitStore.components,
+        circuitStore.wires,
+        nodeManager
+      );
+      animationManager.createParticles(paths);
+      animationManager.start();
     } else {
-      stopCurrentFlowAnimation();
+      animationManager.stop();
     }
   }
 );
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
-  stopCurrentFlowAnimation();
+  animationManager?.destroy();
   stage?.destroy();
 });
 </script>

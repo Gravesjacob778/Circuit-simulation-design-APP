@@ -109,6 +109,7 @@ const layers = konvaStage.getLayers();
 **主要方法：**
 
 - `initialize(currentFlowLayer)` - 初始化動畫管理器
+- `getAllWirePathsWithDirection(components, wires, nodeManager)` - 計算電流路徑與方向
 - `createParticles(paths)` - 創建動畫粒子
 - `start(getPositionOnPath)` - 啟動動畫
 - `stop()` - 停止動畫
@@ -212,4 +213,3 @@ konvaStage.destroy();
 3. **無組件狀態**：不依賴 Vue 組件的內部狀態
 4. **參數化**：所有需要的數據通過參數傳入
 5. **可測試性**：所有方法應易於單元測試
-
