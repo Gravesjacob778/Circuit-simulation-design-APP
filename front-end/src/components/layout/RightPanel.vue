@@ -43,9 +43,6 @@ const aiMessages = ref([
 // 選取的元件
 const selectedComponent = computed(() => circuitStore.selectedComponent);
 
-// 元件屬性編輯
-const editValue = ref<number | null>(null);
-
 function handleValueChange(newValue: number) {
   if (selectedComponent.value) {
     circuitStore.updateComponentProperty(selectedComponent.value.id, 'value', newValue);

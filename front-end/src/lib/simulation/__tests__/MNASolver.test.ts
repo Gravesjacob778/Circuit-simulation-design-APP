@@ -109,6 +109,25 @@ describe('MNASolver', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('接地');
     });
+
+    it('should fail for circuit with unconnected ground', () => {
+      const components = [
+        createComponent('v1', 'dc_source', 5, [{ name: '+' }, { name: '-' }]),
+        createComponent('r1', 'resistor', 1000),
+        createComponent('gnd', 'ground', undefined, [{ name: 'gnd' }]),
+      ];
+
+      // 有導線，但沒有任何導線把 gnd 接到非接地元件
+      const wires = [
+        createWire('w1', 'v1', 0, 'r1', 0),
+      ];
+
+      const result = runDCAnalysis(components, wires);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('接地');
+      expect(result.error).toContain('未連接');
+    });
     
     it('should fail for circuit without power source', () => {
       const components = [

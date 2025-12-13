@@ -67,6 +67,13 @@ function handleToggleCurrentAnimation() {
       </button>
     </div>
 
+    <!-- 中間狀態 / 錯誤提示 -->
+    <div class="center-group">
+      <div v-if="circuitStore.simulationError" class="simulation-error" role="alert">
+        {{ circuitStore.simulationError }}
+      </div>
+    </div>
+
     <!-- 右側操作 -->
     <div class="right-group">
       <button class="icon-btn" @click="handleUndo" title="Undo" :disabled="!circuitStore.canUndo"
@@ -97,10 +104,30 @@ function handleToggleCurrentAnimation() {
 }
 
 .left-group,
+.center-group,
 .right-group {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+}
+
+.center-group {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.simulation-error {
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent-red);
+  background-color: var(--color-bg-secondary);
+  color: var(--color-accent-red);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .icon-btn {

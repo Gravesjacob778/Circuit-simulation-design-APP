@@ -105,6 +105,16 @@ export class MNASolver {
     if (!hasGround) {
       return { valid: false, error: '電路缺少接地（Ground）元件' };
     }
+
+    // 檢查接地是否有實際接入電路（至少要有一條導線把 GND 接到非接地元件）
+    const groundIds = new Set(components.filter(c => c.type === 'ground').map(c => c.id));
+    const hasGroundConnection = wires.some(w =>
+      (groundIds.has(w.fromComponentId) && !groundIds.has(w.toComponentId)) ||
+      (groundIds.has(w.toComponentId) && !groundIds.has(w.fromComponentId))
+    );
+    if (!hasGroundConnection) {
+      return { valid: false, error: '接地（Ground）元件未連接到電路（請用導線將 GND 接到電路）' };
+    }
     
     // 檢查是否有電源
     const hasPowerSource = components.some(

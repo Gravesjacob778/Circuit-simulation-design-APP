@@ -342,18 +342,23 @@ export const useCircuitStore = defineStore('circuit', () => {
         
         if (isCurrentAnimating.value) {
             // 執行 DC 模擬
-            runSimulation();
+            const ok = runSimulation();
+            if (!ok) {
+                // 若模擬失敗，避免顯示「正在動畫」的錯覺
+                isCurrentAnimating.value = false;
+            }
         } else {
             // 清除模擬結果
             dcResult.value = null;
             simulationError.value = null;
+            simulationData.value = null;
         }
     }
 
     /**
      * 執行 DC 穩態模擬
      */
-    function runSimulation(): void {
+    function runSimulation(): boolean {
         isSimulating.value = true;
         simulationError.value = null;
         
@@ -365,13 +370,18 @@ export const useCircuitStore = defineStore('circuit', () => {
                 // 更新 simulationData 用於圖表顯示
                 updateSimulationData(result);
                 console.log('DC 模擬成功', result);
+                return true;
             } else {
                 simulationError.value = result.error || '未知錯誤';
+                simulationData.value = null;
                 console.warn('DC 模擬失敗:', result.error);
+                return false;
             }
         } catch (error) {
             simulationError.value = error instanceof Error ? error.message : '模擬執行錯誤';
+            simulationData.value = null;
             console.error('DC 模擬錯誤:', error);
+            return false;
         } finally {
             isSimulating.value = false;
         }
