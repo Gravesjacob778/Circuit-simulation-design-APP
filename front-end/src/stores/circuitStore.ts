@@ -11,10 +11,10 @@ import type {
     NetNode,
     Netlist,
     ComponentType,
-    Port,
     SimulationData,
 } from '@/types/circuit';
 import { getComponentDefinition } from '@/config/componentDefinitions';
+import { runDCAnalysis, type DCSimulationResult } from '@/lib/simulation';
 
 export const useCircuitStore = defineStore('circuit', () => {
     // ===== State =====
@@ -26,6 +26,8 @@ export const useCircuitStore = defineStore('circuit', () => {
     const simulationData = ref<SimulationData | null>(null);
     const isSimulating = ref(false);
     const isCurrentAnimating = ref(false); // 電流流動動畫狀態
+    const dcResult = ref<DCSimulationResult | null>(null); // DC 模擬結果
+    const simulationError = ref<string | null>(null); // 模擬錯誤訊息
 
     // Undo/Redo History
     // 使用 JSON 字串儲存快照，避免物件參考問題
@@ -333,10 +335,107 @@ export const useCircuitStore = defineStore('circuit', () => {
     }
 
     /**
-     * 切換電流動畫
+     * 切換電流動畫並執行模擬
      */
     function toggleCurrentAnimation(): void {
         isCurrentAnimating.value = !isCurrentAnimating.value;
+        
+        if (isCurrentAnimating.value) {
+            // 執行 DC 模擬
+            runSimulation();
+        } else {
+            // 清除模擬結果
+            dcResult.value = null;
+            simulationError.value = null;
+        }
+    }
+
+    /**
+     * 執行 DC 穩態模擬
+     */
+    function runSimulation(): void {
+        isSimulating.value = true;
+        simulationError.value = null;
+        
+        try {
+            const result = runDCAnalysis(components.value, wires.value);
+            dcResult.value = result;
+            
+            if (result.success) {
+                // 更新 simulationData 用於圖表顯示
+                updateSimulationData(result);
+                console.log('DC 模擬成功', result);
+            } else {
+                simulationError.value = result.error || '未知錯誤';
+                console.warn('DC 模擬失敗:', result.error);
+            }
+        } catch (error) {
+            simulationError.value = error instanceof Error ? error.message : '模擬執行錯誤';
+            console.error('DC 模擬錯誤:', error);
+        } finally {
+            isSimulating.value = false;
+        }
+    }
+
+    /**
+     * 更新模擬數據（用於圖表顯示）
+     */
+    function updateSimulationData(result: DCSimulationResult): void {
+        const signals: SimulationData['signals'] = [];
+        
+        // 為每個元件建立電流訊號
+        result.branchCurrents.forEach((current, componentId) => {
+            const comp = components.value.find(c => c.id === componentId);
+            if (comp) {
+                signals.push({
+                    name: `I(${comp.label || comp.type})`,
+                    values: [current * 1000], // 轉換為 mA
+                    unit: 'mA',
+                    color: getSignalColor(signals.length),
+                });
+            }
+        });
+        
+        // DC 分析只有單一時間點
+        simulationData.value = {
+            time: [0],
+            signals,
+        };
+    }
+
+    /**
+     * 取得訊號顏色
+     */
+    function getSignalColor(index: number): string {
+        const colors = ['#42a5f5', '#66bb6a', '#ffa726', '#ef5350', '#ab47bc'];
+        return colors[index % colors.length]!;
+    }
+
+    /**
+     * 取得元件的電流值 (mA)
+     */
+    function getComponentCurrent(componentId: string): number | null {
+        if (!dcResult.value?.success) return null;
+        const current = dcResult.value.branchCurrents.get(componentId);
+        return current !== undefined ? current * 1000 : null; // mA
+    }
+
+    /**
+     * 取得元件兩端的電壓差 (V)
+     */
+    function getComponentVoltage(componentId: string): number | null {
+        if (!dcResult.value?.success) return null;
+        const comp = components.value.find(c => c.id === componentId);
+        if (!comp || comp.ports.length < 2) return null;
+        
+        // 從節點電壓計算差值
+        // 需要更複雜的邏輯來追蹤節點對應關係
+        // 目前簡化：使用歐姆定律 V = I * R
+        const current = dcResult.value.branchCurrents.get(componentId);
+        if (current !== undefined && comp.value) {
+            return current * comp.value;
+        }
+        return null;
     }
 
     // 初始化第一筆紀錄
@@ -352,6 +451,8 @@ export const useCircuitStore = defineStore('circuit', () => {
         simulationData,
         isSimulating,
         isCurrentAnimating,
+        dcResult,
+        simulationError,
         canUndo,
         canRedo,
         // Getters
@@ -373,6 +474,9 @@ export const useCircuitStore = defineStore('circuit', () => {
         setSimulationData,
         setSimulating,
         toggleCurrentAnimation,
+        runSimulation,
+        getComponentCurrent,
+        getComponentVoltage,
         undo,
         redo,
     };

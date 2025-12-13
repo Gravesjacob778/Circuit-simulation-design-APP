@@ -46,12 +46,76 @@ let componentLayer: Konva.Layer | null = null;
 let tempLayer: Konva.Layer | null = null; // 用於繪製中的導線
 
 // Stage 平移狀態
+// Stage 平移狀態
 let isPanning = false;
 let panStartPos = { x: 0, y: 0 };
 let stageStartPos = { x: 0, y: 0 };
 
 // ========== 電流動畫相關 ==========
 let currentFlowLayer: Konva.Layer | null = null;
+const ledAnimations: Map<string, Konva.Animation> = new Map();
+
+/**
+ * 獲取帶有模擬狀態的元件物件
+ */
+function getComponentWithState(component: CircuitComponent): CircuitComponent {
+  const currentMA = circuitStore.getComponentCurrent(component.id);
+  if (currentMA !== null) {
+    // 轉換 mA 為 A，並賦值給 current 屬性
+    return { ...component, current: currentMA / 1000 };
+  }
+  return component;
+}
+
+/**
+ * 更新 LED 動畫狀態
+ */
+function updateLEDAnimations() {
+  // 清除失效的動畫
+  const activeIds = new Set(circuitStore.components.map(c => c.id));
+  for (const [id, anim] of ledAnimations.entries()) {
+    if (!activeIds.has(id)) {
+      anim.stop();
+      ledAnimations.delete(id);
+    }
+  }
+
+  circuitStore.components.forEach(comp => {
+    if (comp.type === 'led') {
+      const node = nodeManager?.getComponentNode(comp.id);
+      if (!node) return;
+
+      const currentMA = circuitStore.getComponentCurrent(comp.id);
+      const isConducting = currentMA !== null && currentMA > 0.1; // > 0.1 mA
+
+      if (isConducting) {
+        if (!ledAnimations.has(comp.id)) {
+          const arrows = node.find('.led-arrow');
+          if (arrows.length === 0) return;
+
+          const anim = new Konva.Animation((frame) => {
+            if (!frame) return;
+            // 閃爍頻率約 5Hz
+            const opacity = 0.6 + 0.4 * Math.sin(frame.time * 0.01);
+            arrows.forEach(arrow => arrow.opacity(opacity));
+          }, node.getLayer());
+
+          anim.start();
+          ledAnimations.set(comp.id, anim);
+        }
+      } else {
+        // 停止動畫
+        if (ledAnimations.has(comp.id)) {
+          ledAnimations.get(comp.id)?.stop();
+          ledAnimations.delete(comp.id);
+          // 恢復預設透明度 (在 drawLED 中定義為 0.2)
+          const arrows = node.find('.led-arrow');
+          arrows.forEach(arrow => arrow.opacity(0.2));
+        }
+      }
+    }
+  });
+}
 
 /**
  * 處理端點點擊 - 開始或完成接線
@@ -61,11 +125,11 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
     // 開始接線
     wiringStateManager?.startWiring({ componentId, portId, x: portX, y: portY });
     console.log('開始接線:', wiringStateManager?.getStartPort());
-    
+
     // 立即顯示起點標記，提供視覺回饋
     if (!tempLayer) return;
     tempLayer.destroyChildren();
-    
+
     // 繪製起點圓點（較大且帶動畫效果）
     const startDot = new Konva.Circle({
       x: portX,
@@ -78,7 +142,7 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
       shadowBlur: 10,
       shadowOpacity: 0.8,
     });
-    
+
     // 添加脈衝動畫效果
     const pulseAnimation = new Konva.Animation((frame) => {
       if (!frame) return;
@@ -86,7 +150,7 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
       startDot.scale({ x: scale, y: scale });
     }, tempLayer);
     pulseAnimation.start();
-    
+
     // 添加提示文字
     const hintText = new Konva.Text({
       x: portX + 15,
@@ -98,19 +162,19 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
       shadowBlur: 4,
       shadowOpacity: 0.8,
     });
-    
+
     tempLayer.add(startDot, hintText);
     tempLayer.batchDraw();
-    
+
     // 儲存動畫引用以便後續清除
     (tempLayer as any)._pulseAnimation = pulseAnimation;
-    
+
   } else if (wiringStateManager?.getStartPort()) {
     // 結束接線 - 不能連接到同一個端點
     if (wiringStateManager.isSamePort(componentId, portId)) {
       // 點擊同一個端點，取消接線
       wiringStateManager.cancelWiring();
-      
+
       // 停止動畫
       if ((tempLayer as any)._pulseAnimation) {
         (tempLayer as any)._pulseAnimation.stop();
@@ -123,7 +187,7 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
     // 建立導線
     const startPort = wiringStateManager.getStartPort();
     if (!startPort) return;
-    
+
     console.log('結束接線:', { componentId, portId });
     circuitStore.addWire(
       startPort.componentId,
@@ -134,7 +198,7 @@ function handlePortClick(componentId: string, portId: string, portX: number, por
 
     // 重置接線狀態
     wiringStateManager.endWiring();
-    
+
     // 停止動畫
     if ((tempLayer as any)._pulseAnimation) {
       (tempLayer as any)._pulseAnimation.stop();
@@ -204,16 +268,19 @@ function handlePortMouseLeave(componentId: string, _portId: string, portShape: K
 
 // 建立元件的 Konva 節點
 function createComponentNode(component: CircuitComponent): Konva.Group {
+  // 注入模擬狀態
+  const componentWithState = getComponentWithState(component);
+
   const group = new Konva.Group({
-    x: component.x,
-    y: component.y,
-    rotation: component.rotation,
-    draggable: component.selected && !wiringStateManager?.isInWiringMode(), // 只有選取且非接線模式才能拖曳
-    id: component.id,
+    x: componentWithState.x,
+    y: componentWithState.y,
+    rotation: componentWithState.rotation,
+    draggable: componentWithState.selected && !wiringStateManager?.isInWiringMode(),
+    id: componentWithState.id,
   });
 
   // 繪製元件形狀
-  drawComponentShape(group, component);
+  drawComponentShape(group, componentWithState);
 
   // 端點事件交給 KonvaEventHandler
   const portCircles = group.find('.port');
@@ -253,16 +320,16 @@ function updateComponentVisuals() {
     if (node) {
       // 更新拖拉狀態：只有選取的元件才能拖拉
       node.draggable(comp.selected && !wiringStateManager?.isInWiringMode());
-      
+
       if (comp.selected) {
         // 選取時繪製輔助線
         drawGuides(guideLayer, stage, comp.x, comp.y, uiStore.gridSize);
       }
-      
-      // 重新繪製以顯示高亮效果
+
+      // 重新繪製以顯示高亮效果 (包含模擬狀態)
       node.destroyChildren();
-      drawComponentShape(node, comp);
-      
+      drawComponentShape(node, getComponentWithState(comp));
+
       // 重新綁定端點事件（因為子節點被重建）
       const portCircles = node.find('.port');
       if (portCircles && portCircles.length > 0) {
@@ -289,12 +356,12 @@ function updateComponentVisuals() {
       }
     }
   });
-  
+
   // 檢查是否有選取的元件，如果沒有則清除輔助線
   if (!circuitStore.selectedComponentId) {
     clearGuides(guideLayer);
   }
-  
+
   componentLayer?.batchDraw();
 }
 
@@ -361,6 +428,9 @@ function renderAllComponents() {
     componentLayer,
     (comp) => createComponentNode(comp)
   );
+
+  // 更新 LED 動畫
+  updateLEDAnimations();
 }
 
 // 重新繪製所有導線
@@ -415,7 +485,7 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
     // 如果正在接線，取消接線
     if (wiringStateManager?.isInWiringMode()) {
       wiringStateManager.cancelWiring();
-      
+
       // 停止動畫
       if ((tempLayer as any)._pulseAnimation) {
         (tempLayer as any)._pulseAnimation.stop();
@@ -424,7 +494,7 @@ function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
       clearTempLayer(tempLayer);
       return;
     }
-    
+
     circuitStore.selectComponent(null);
     circuitStore.selectWire(null);
     clearGuides(guideLayer); // 清除輔助線
@@ -520,7 +590,7 @@ function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (wiringStateManager?.isInWiringMode()) {
       wiringStateManager.cancelWiring();
-      
+
       // 停止動畫
       if ((tempLayer as any)._pulseAnimation) {
         (tempLayer as any)._pulseAnimation.stop();
@@ -645,6 +715,11 @@ onMounted(() => {
     }
   });
   resizeObserver.observe(containerRef.value);
+
+  // 初始繪製
+  if (circuitStore.components.length > 0) {
+    renderAllComponents();
+  }
 });
 
 // 監聽元件數量變化（新增/刪除）
@@ -702,9 +777,25 @@ watch(
   }
 );
 
+// 監聽 DC 模擬結果變化
+watch(
+  () => circuitStore.dcResult,
+  () => {
+    // 當模擬結果更新時，重新繪製元件以反映狀態 (如 LED 發光)
+    renderAllComponents();
+    // updateComponentVisuals 不是全部重繪，可能不夠
+    // 但 renderAllComponents 會重建節點，可以確保 drawLED 拿到最新 current
+  },
+  { deep: true }
+);
+
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
   animationManager?.destroy();
+  // 清除 LED 動畫
+  ledAnimations.forEach(anim => anim.stop());
+  ledAnimations.clear();
+
   if (stage && eventHandler) {
     eventHandler.unbindStageEvents(stage);
     eventHandler.clearCallbacks();
@@ -714,12 +805,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    class="circuit-canvas"
-    @drop="handleDrop"
-    @dragover.prevent
-  >
+  <div ref="containerRef" class="circuit-canvas" @drop="handleDrop" @dragover.prevent>
     <!-- Konva 會在這裡掛載 -->
 
     <!-- 空白提示 -->

@@ -93,13 +93,8 @@ function handleSelectExample(id: string) {
 
     <!-- Examples List -->
     <div class="examples-list scrollable">
-      <div
-        v-for="example in examples"
-        :key="example.id"
-        class="example-item"
-        :class="{ active: activeExampleId === example.id }"
-        @click="handleSelectExample(example.id)"
-      >
+      <div v-for="example in examples" :key="example.id" class="example-item"
+        :class="{ active: activeExampleId === example.id }" @click="handleSelectExample(example.id)">
         <div class="example-icon">{{ example.icon }}</div>
         <div class="example-content">
           <h4 class="example-title">{{ example.title }}</h4>

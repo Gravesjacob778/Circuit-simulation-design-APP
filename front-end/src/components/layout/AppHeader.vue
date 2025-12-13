@@ -6,6 +6,9 @@
 
 import { ref } from 'vue';
 import ComponentToolbar from '@/components/workspace/ComponentToolbar.vue';
+import { useUIStore } from '@/stores/uiStore';
+
+const uiStore = useUIStore();
 
 defineProps<{
   appName?: string;
@@ -37,22 +40,22 @@ function handleToolClick(id: string) {
 
 <template>
   <header class="app-header">
+    <!-- Left Sidebar Toggle -->
+    <button class="sidebar-toggle" @click="uiStore.toggleLeftSidebar"
+      :title="uiStore.leftSidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar'">
+      {{ uiStore.leftSidebarOpen ? '◀' : '▶' }}
+    </button>
+
     <!-- Left Section: Workspace Management -->
     <div class="header-section left-controls">
       <button class="workspace-btn">
         <span class="refresh-icon">↻</span>
         Workspace
       </button>
-      
+
       <div class="nav-icons">
-        <button 
-          v-for="tool in workspaceTools" 
-          :key="tool.id"
-          class="nav-icon-btn"
-          :class="{ active: activeToolId === tool.id }"
-          :title="tool.title"
-          @click="handleToolClick(tool.id)"
-        >
+        <button v-for="tool in workspaceTools" :key="tool.id" class="nav-icon-btn"
+          :class="{ active: activeToolId === tool.id }" :title="tool.title" @click="handleToolClick(tool.id)">
           {{ tool.icon }}
         </button>
       </div>
@@ -65,13 +68,21 @@ function handleToolClick(id: string) {
     <div class="header-section right-components">
       <ComponentToolbar />
     </div>
+
+    <!-- Right Sidebar Toggle -->
+    <button class="sidebar-toggle" @click="uiStore.toggleRightSidebar"
+      :title="uiStore.rightSidebarOpen ? 'Collapse Panel' : 'Expand Panel'">
+      {{ uiStore.rightSidebarOpen ? '▶' : '◀' }}
+    </button>
   </header>
 </template>
 
 <style scoped>
 .app-header {
-  height: 64px; /* 加高 Header 以容納更大的圖示 */
-  background-color: #1e1e1e; /* 深灰色背景 */
+  height: 64px;
+  /* 加高 Header 以容納更大的圖示 */
+  background-color: #1e1e1e;
+  /* 深灰色背景 */
   border-bottom: 1px solid #000;
   display: flex;
   align-items: center;
@@ -91,16 +102,19 @@ function handleToolClick(id: string) {
 /* Left Controls */
 .left-controls {
   flex-shrink: 0;
-  background-color: #252525; /* 稍微不同的深色以區分區塊 */
+  background-color: #252525;
+  /* 稍微不同的深色以區分區塊 */
   gap: var(--spacing-lg);
-  padding-left: var(--spacing-lg);
+  /* padding-left: var(--spacing-lg);  Removed padding to fit toggle button better if needed, or keep it */
+  padding-left: var(--spacing-sm);
 }
 
 .workspace-btn {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  color: #42a5f5; /* 藍色文字 */
+  color: #42a5f5;
+  /* 藍色文字 */
   font-size: 15px;
   font-weight: 500;
   background: none;
@@ -124,7 +138,8 @@ function handleToolClick(id: string) {
 }
 
 .nav-icon-btn {
-  font-size: 22px; /* 放大圖示 */
+  font-size: 22px;
+  /* 放大圖示 */
   color: #888;
   background: none;
   border: none;
@@ -170,7 +185,8 @@ function handleToolClick(id: string) {
 /* Right Components */
 .right-components {
   flex: 1;
-  overflow-x: auto; /* 允許水平滾動 */
+  overflow-x: auto;
+  /* 允許水平滾動 */
   background-color: #1e1e1e;
   /* 隱藏滾動條但保持功能 */
   scrollbar-width: none;
@@ -179,5 +195,26 @@ function handleToolClick(id: string) {
 
 .right-components::-webkit-scrollbar {
   display: none;
+}
+
+/* Sidebar Toggle Buttons */
+.sidebar-toggle {
+  height: 100%;
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 </style>

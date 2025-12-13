@@ -21,9 +21,14 @@ function handleRedo() {
   }
 }
 
-function handleFitToScreen() {
-  // TODO: Implement fit to screen logic in canvas
-  console.log('Fit to screen');
+function handleFullScreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    }
+  }
 }
 
 function handleCut() {
@@ -33,7 +38,7 @@ function handleCut() {
     console.log('Wire cut:', circuitStore.selectedWireId);
     return;
   }
-  
+
   // 如果沒有選取導線，則刪除選取的元件
   if (circuitStore.selectedComponentId) {
     circuitStore.removeComponent(circuitStore.selectedComponentId);
@@ -56,38 +61,24 @@ function handleToggleCurrentAnimation() {
       <button class="icon-btn" title="Cut" @click="handleCut">
         <Scissors :size="20" />
       </button>
-      <button 
-        class="icon-btn" 
-        :class="{ active: circuitStore.isCurrentAnimating }"
-        title="Toggle Current Flow Animation"
-        @click="handleToggleCurrentAnimation"
-      >
+      <button class="icon-btn" :class="{ active: circuitStore.isCurrentAnimating }"
+        title="Toggle Current Flow Animation" @click="handleToggleCurrentAnimation">
         <Zap :size="20" />
       </button>
     </div>
 
     <!-- 右側操作 -->
     <div class="right-group">
-      <button 
-        class="icon-btn" 
-        @click="handleUndo" 
-        title="Undo"
-        :disabled="!circuitStore.canUndo"
-        :class="{ disabled: !circuitStore.canUndo }"
-      >
+      <button class="icon-btn" @click="handleUndo" title="Undo" :disabled="!circuitStore.canUndo"
+        :class="{ disabled: !circuitStore.canUndo }">
         <Undo2 :size="20" />
       </button>
-      <button 
-        class="icon-btn" 
-        @click="handleRedo" 
-        title="Redo"
-        :disabled="!circuitStore.canRedo"
-        :class="{ disabled: !circuitStore.canRedo }"
-      >
+      <button class="icon-btn" @click="handleRedo" title="Redo" :disabled="!circuitStore.canRedo"
+        :class="{ disabled: !circuitStore.canRedo }">
         <Redo2 :size="20" />
       </button>
-      <button class="icon-btn" @click="handleFitToScreen" title="Fit to Screen">
-        <Scan :size="20" /> 
+      <button class="icon-btn" @click="handleFullScreen" title="Full Screen">
+        <Scan :size="20" />
       </button>
     </div>
   </div>
@@ -100,11 +91,13 @@ function handleToggleCurrentAnimation() {
   justify-content: space-between;
   height: 100%;
   padding: 0 var(--spacing-md);
-  background-color: #222222; /* 配合圖片的深灰色 */
+  background-color: #222222;
+  /* 配合圖片的深灰色 */
   border-top: 1px solid #333;
 }
 
-.left-group, .right-group {
+.left-group,
+.right-group {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -119,7 +112,8 @@ function handleToggleCurrentAnimation() {
   border-radius: var(--radius-sm);
   background-color: transparent;
   border: none;
-  color: #888888; /* 圖片中的灰色圖示 */
+  color: #888888;
+  /* 圖片中的灰色圖示 */
   cursor: pointer;
   transition: all var(--transition-fast);
 }

@@ -39,6 +39,7 @@ export interface CircuitComponent {
     label?: string; // 顯示標籤 (R1, C1, etc.)
     ports: Port[];
     selected?: boolean;
+    current?: number; // 運行時電流值 (Amps)，用於視覺回饋 (如 LED 發光)
 }
 
 // 導線連接

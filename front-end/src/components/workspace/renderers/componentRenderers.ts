@@ -362,6 +362,128 @@ export function drawACSource(group: Konva.Group, component: CircuitComponent) {
 }
 
 /**
+ * 繪製 LED
+ */
+export function drawLED(group: Konva.Group, component: CircuitComponent) {
+    // 如果選取，添加高亮背景
+    if (component.selected) {
+        const highlight = new Konva.Rect({
+            x: -45,
+            y: -30,
+            width: 90,
+            height: 60,
+            fill: 'rgba(76, 175, 80, 0.1)',
+            stroke: '#4caf50',
+            strokeWidth: 2,
+            cornerRadius: 4,
+            shadowColor: '#4caf50',
+            shadowBlur: 10,
+            shadowOpacity: 0.5,
+        });
+        group.add(highlight);
+    }
+
+    const strokeColor = component.selected ? '#4caf50' : '#cccccc';
+    const strokeWidth = component.selected ? 3 : 2;
+
+    // 左側連線 (Anode)
+    const line1 = new Konva.Line({
+        points: [-40, 0, -10, 0],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    
+    // 右側連線 (Cathode)
+    const line2 = new Konva.Line({
+        points: [10, 0, 40, 0],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+
+    // 三角形 (指向右)
+    const triangle = new Konva.Line({
+        points: [-10, -10, -10, 10, 10, 0],
+        closed: true,
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+        fill: 'transparent',
+    });
+
+    // 垂直擋板 (Cathode side)
+    const bar = new Konva.Line({
+        points: [10, -10, 10, 10],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+
+    // 判斷是否導通 (假設電流 > 0.1mA 為導通)
+    // 如果沒有模擬數據 (current undefined)，預設不發光
+    const isConducting = component.current !== undefined && component.current > 0.0001;
+
+    // 發光箭頭 (黃色)
+    const arrowColor = '#ffeb3b';
+    const arrowDates = [
+        { x: 0, y: -15 },
+        { x: 10, y: -15 }
+    ];
+
+    arrowDates.forEach(pos => {
+        const arrow = new Konva.Arrow({
+            x: pos.x,
+            y: pos.y,
+            points: [0, 0, 10, -10],
+            pointerLength: 5,
+            pointerWidth: 5,
+            stroke: arrowColor,
+            fill: arrowColor,
+            strokeWidth: 2,
+            opacity: isConducting ? 1 : 0.2, // 導通時不透明，否則半透明
+            name: 'led-arrow', // 用於動畫搜尋
+            visible: true,
+        });
+        
+        // 如果導通，添加發光效果
+        if (isConducting) {
+            arrow.shadowColor(arrowColor);
+            arrow.shadowBlur(10);
+            arrow.shadowOpacity(0.8);
+        }
+        
+        group.add(arrow);
+    });
+
+    group.add(line1, line2, triangle, bar);
+
+    // 端點
+    const portAnode = new Konva.Circle({
+        x: -40,
+        y: 0,
+        radius: 4,
+        fill: '#ff5722', // Anode Red
+        name: 'port',
+    });
+    const portCathode = new Konva.Circle({
+        x: 40,
+        y: 0,
+        radius: 4,
+        fill: '#2196f3', // Cathode Blue
+        name: 'port',
+    });
+    group.add(portAnode, portCathode);
+
+    // 標籤
+    const label = new Konva.Text({
+        x: -15,
+        y: 20,
+        text: component.label,
+        fontSize: 10,
+        fill: '#888888',
+        align: 'center',
+    });
+    group.add(label);
+}
+
+/**
  * 繪製通用元件
  */
 export function drawGenericComponent(group: Konva.Group, component: CircuitComponent) {
@@ -442,6 +564,9 @@ export function drawComponentShape(group: Konva.Group, component: CircuitCompone
             break;
         case 'ac_source':
             drawACSource(group, component);
+            break;
+        case 'led':
+            drawLED(group, component);
             break;
         default:
             drawGenericComponent(group, component);

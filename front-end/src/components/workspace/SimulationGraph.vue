@@ -15,12 +15,38 @@ const graphContainer = ref<HTMLDivElement | null>(null);
 // 模擬數據
 const simulationData = computed(() => circuitStore.simulationData);
 
-// 圖表統計
-const stats = ref({
-  max: 2,
-  min: 2,
-  range: 0,
-  rms: 2,
+// 檢查是否有真實模擬數據
+const hasSimulationData = computed(() => {
+  return simulationData.value && simulationData.value.signals.length > 0;
+});
+
+// 圖表統計 - 從真實數據計算
+const stats = computed(() => {
+  if (!hasSimulationData.value) {
+    return { max: 0, min: 0, range: 0, rms: 0 };
+  }
+
+  // 從所有訊號中收集數值
+  const allValues: number[] = [];
+  simulationData.value!.signals.forEach(signal => {
+    allValues.push(...signal.values);
+  });
+
+  if (allValues.length === 0) {
+    return { max: 0, min: 0, range: 0, rms: 0 };
+  }
+
+  const max = Math.max(...allValues);
+  const min = Math.min(...allValues);
+  const range = max - min;
+  const rms = Math.sqrt(allValues.reduce((sum, v) => sum + v * v, 0) / allValues.length);
+
+  return {
+    max: Number(max.toFixed(3)),
+    min: Number(min.toFixed(3)),
+    range: Number(range.toFixed(3)),
+    rms: Number(rms.toFixed(3)),
+  };
 });
 
 // Plotly 配置
@@ -38,9 +64,14 @@ const layout: Partial<Plotly.Layout> = {
     showgrid: true,
     gridcolor: '#333',
     tickfont: { color: '#888', size: 10 },
-    title: { text: 'Current (A)', font: { color: '#888', size: 10 } },
+    title: { text: 'Current (mA)', font: { color: '#888', size: 10 } },
   },
-  showlegend: false,
+  showlegend: true,
+  legend: {
+    font: { color: '#888', size: 10 },
+    x: 1,
+    y: 1,
+  },
 };
 
 const config: Partial<Plotly.Config> = {
@@ -48,45 +79,30 @@ const config: Partial<Plotly.Config> = {
   responsive: true,
 };
 
-// 初始化圖表
+// 初始化空白圖表
 function initGraph() {
   if (!graphContainer.value) return;
-
-  // 產生模擬數據 (Demo)
-  const timePoints = Array.from({ length: 200 }, (_, i) => i * 0.01);
-  const currentValues = timePoints.map((t) => {
-    // 模擬電流變化（階梯函數 + 小波動）
-    if (t < 0.5) return 2 + Math.random() * 0.05;
-    if (t < 1.0) return 1.5 + Math.random() * 0.05;
-    return 1 + Math.random() * 0.05;
-  });
-
-  const traces: Plotly.Data[] = [
-    {
-      x: timePoints,
-      y: currentValues,
-      type: 'scatter',
-      mode: 'lines',
-      line: { color: '#42a5f5', width: 2 },
-      fill: 'tozeroy',
-      fillcolor: 'rgba(66, 165, 245, 0.1)',
-    },
-  ];
-
-  Plotly.newPlot(graphContainer.value, traces, layout, config);
+  Plotly.newPlot(graphContainer.value, [], layout, config);
 }
 
 // 更新圖表
 function updateGraph() {
-  if (!graphContainer.value || !simulationData.value) return;
+  if (!graphContainer.value) return;
 
-  const traces: Plotly.Data[] = simulationData.value.signals.map((signal) => ({
+  if (!hasSimulationData.value) {
+    // 清空圖表
+    Plotly.react(graphContainer.value, [], layout, config);
+    return;
+  }
+
+  const traces: Plotly.Data[] = simulationData.value!.signals.map((signal) => ({
     x: simulationData.value!.time,
     y: signal.values,
     type: 'scatter',
-    mode: 'lines',
+    mode: 'lines+markers',
     name: signal.name,
     line: { color: signal.color || '#42a5f5', width: 2 },
+    marker: { size: 8, color: signal.color || '#42a5f5' },
   }));
 
   Plotly.react(graphContainer.value, traces, layout, config);
@@ -98,7 +114,7 @@ onMounted(() => {
 
 watch(simulationData, () => {
   updateGraph();
-});
+}, { deep: true });
 </script>
 
 <template>
