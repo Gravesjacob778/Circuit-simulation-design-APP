@@ -18,6 +18,7 @@ import { KonvaAnimationManager } from '@/utils/KonvaAnimationManager';
 import { KonvaEventHandler } from '@/utils/KonvaEventHandler';
 import { WiringStateManager } from '@/utils/WiringStateManager';
 import { drawGuides, clearGuides, drawGrid, drawWiringPreview, clearTempLayer } from '@/utils/konvaUtils';
+import { buildDCSimulationOverlayLabels } from '@/lib/simulation/simulationOverlay';
 
 const circuitStore = useCircuitStore();
 const uiStore = useUIStore();
@@ -54,6 +55,73 @@ let stageStartPos = { x: 0, y: 0 };
 // ========== 電流動畫相關 ==========
 let currentFlowLayer: Konva.Layer | null = null;
 const ledAnimations: Map<string, Konva.Animation> = new Map();
+
+// ========== 模擬結果標籤（電壓/電流） ==========
+let simulationLabelGroup: Konva.Group | null = null;
+
+function ensureSimulationLabelGroup(): Konva.Group | null {
+  if (!currentFlowLayer) return null;
+  if (simulationLabelGroup && simulationLabelGroup.getLayer()) return simulationLabelGroup;
+
+  simulationLabelGroup = new Konva.Group({
+    name: 'simulation-labels',
+    listening: false,
+  });
+  currentFlowLayer.add(simulationLabelGroup);
+  simulationLabelGroup.moveToTop();
+  currentFlowLayer.batchDraw();
+  return simulationLabelGroup;
+}
+
+function clearSimulationLabels() {
+  const group = ensureSimulationLabelGroup();
+  if (!group) return;
+  group.destroyChildren();
+  group.getLayer()?.batchDraw();
+}
+
+function renderSimulationLabels() {
+  const group = ensureSimulationLabelGroup();
+  if (!group) return;
+
+  if (!circuitStore.isCurrentAnimating || !circuitStore.dcResult?.success) {
+    clearSimulationLabels();
+    return;
+  }
+
+  const labels = buildDCSimulationOverlayLabels(
+    circuitStore.components,
+    circuitStore.wires,
+    circuitStore.dcResult
+  );
+
+  group.destroyChildren();
+
+  for (const label of labels) {
+    const isVoltage = label.kind === 'nodeVoltage';
+    const textNode = new Konva.Text({
+      id: label.id,
+      x: label.x,
+      y: label.y,
+      text: label.text,
+      fontSize: isVoltage ? 22 : 20,
+      fontStyle: 'bold',
+      fill: isVoltage ? '#42a5f5' : '#66bb6a',
+      shadowColor: '#000',
+      shadowBlur: 6,
+      shadowOpacity: 0.75,
+      listening: false,
+    });
+
+    // Treat label.x/y as the visual center point.
+    textNode.offsetX(textNode.width() / 2);
+    textNode.offsetY(textNode.height() / 2);
+    group.add(textNode);
+  }
+
+  group.moveToTop();
+  group.getLayer()?.batchDraw();
+}
 
 /**
  * 獲取帶有模擬狀態的元件物件
@@ -393,6 +461,7 @@ function handleComponentDragMove(component: CircuitComponent) {
   component.y = snapped.y;
 
   renderAllWires();
+  renderSimulationLabels();
 }
 
 function handleComponentDragEnd(component: CircuitComponent) {
@@ -405,6 +474,7 @@ function handleComponentDragEnd(component: CircuitComponent) {
 
   circuitStore.updateComponentPosition(component.id, snapped.x, snapped.y);
   renderAllWires();
+  renderSimulationLabels();
 }
 
 function handleComponentMouseEnter(component: CircuitComponent) {
@@ -459,6 +529,8 @@ function renderAllWires() {
     );
     animationManager.reinitializeParticles(paths);
   }
+
+  renderSimulationLabels();
 }
 
 // 處理 Drop 事件
@@ -660,6 +732,9 @@ onMounted(() => {
   animationManager = new KonvaAnimationManager();
   animationManager.initialize(currentFlowLayer!);
 
+  // 初始化模擬標籤群組（放在 currentFlowLayer，與粒子分離）
+  ensureSimulationLabelGroup();
+
   // 若掛載時已處於動畫狀態，立即啟動
   if (circuitStore.isCurrentAnimating && nodeManager) {
     const paths = animationManager.getAllWirePathsWithDirection(
@@ -720,6 +795,8 @@ onMounted(() => {
   if (circuitStore.components.length > 0) {
     renderAllComponents();
   }
+
+  renderSimulationLabels();
 });
 
 // 監聽元件數量變化（新增/刪除）
@@ -771,8 +848,10 @@ watch(
       );
       animationManager.createParticles(paths);
       animationManager.start();
+      renderSimulationLabels();
     } else {
       animationManager.stop();
+      clearSimulationLabels();
     }
   }
 );
@@ -785,6 +864,8 @@ watch(
     renderAllComponents();
     // updateComponentVisuals 不是全部重繪，可能不夠
     // 但 renderAllComponents 會重建節點，可以確保 drawLED 拿到最新 current
+
+    renderSimulationLabels();
   },
   { deep: true }
 );
@@ -800,6 +881,8 @@ onUnmounted(() => {
     eventHandler.unbindStageEvents(stage);
     eventHandler.clearCallbacks();
   }
+  simulationLabelGroup?.destroy();
+  simulationLabelGroup = null;
   stage?.destroy();
 });
 </script>

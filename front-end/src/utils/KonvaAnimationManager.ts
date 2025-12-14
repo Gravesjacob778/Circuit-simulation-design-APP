@@ -37,10 +37,16 @@ export class KonvaAnimationManager {
      * 清除現有粒子
      */
     private clearParticles(): void {
-        if (this.currentFlowLayer) {
-            this.currentFlowLayer.destroyChildren();
+        // 只清除本管理器建立的粒子，避免清掉同圖層上的其他元素（例如模擬文字標籤）
+        for (const particle of this.particles) {
+            try {
+                particle.destroy();
+            } catch {
+                // ignore
+            }
         }
         this.particles.length = 0;
+        this.currentFlowLayer?.batchDraw();
     }
 
     /**
