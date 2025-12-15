@@ -229,8 +229,8 @@ export class KonvaAnimationManager {
             for (let i = 0; i < numParticles; i++) {
                 const particle = new Konva.Circle({
                     radius: 3,
-                    fill: '#00ffff',
-                    shadowColor: '#00ffff',
+                    fill: '#00ff99ff',
+                    shadowColor: '#00ff91ff',
                     shadowBlur: 8,
                     shadowOpacity: 0.8,
                     opacity: 0.9,
