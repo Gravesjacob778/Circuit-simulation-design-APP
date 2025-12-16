@@ -221,10 +221,15 @@ export const useCircuitStore = defineStore('circuit', () => {
     /**
      * 旋轉元件
      */
-    function rotateComponent(componentId: string): void {
+    function rotateComponent(componentId: string, angle: number = 90): void {
         const component = components.value.find((c) => c.id === componentId);
         if (component) {
-            component.rotation = (component.rotation + 90) % 360;
+            let newRotation = (component.rotation + angle) % 360;
+            // Handle negative rotation
+            if (newRotation < 0) {
+                newRotation += 360;
+            }
+            component.rotation = newRotation;
             saveState(); // 記錄操作
         }
     }
@@ -340,7 +345,7 @@ export const useCircuitStore = defineStore('circuit', () => {
      */
     function toggleCurrentAnimation(): void {
         isCurrentAnimating.value = !isCurrentAnimating.value;
-        
+
         if (isCurrentAnimating.value) {
             // 執行 DC 模擬
             const ok = runSimulation();
@@ -373,11 +378,11 @@ export const useCircuitStore = defineStore('circuit', () => {
             isSimulating.value = false;
             return false;
         }
-        
+
         try {
             const result = runDCAnalysis(components.value, wires.value);
             dcResult.value = result;
-            
+
             if (result.success) {
                 // 更新 simulationData 用於圖表顯示
                 updateSimulationData(result);
@@ -404,7 +409,7 @@ export const useCircuitStore = defineStore('circuit', () => {
      */
     function updateSimulationData(result: DCSimulationResult): void {
         const signals: SimulationData['signals'] = [];
-        
+
         // 為每個元件建立電流訊號
         result.branchCurrents.forEach((current, componentId) => {
             const comp = components.value.find(c => c.id === componentId);
@@ -417,7 +422,7 @@ export const useCircuitStore = defineStore('circuit', () => {
                 });
             }
         });
-        
+
         // DC 分析只有單一時間點
         simulationData.value = {
             time: [0],
@@ -449,7 +454,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         if (!dcResult.value?.success) return null;
         const comp = components.value.find(c => c.id === componentId);
         if (!comp || comp.ports.length < 2) return null;
-        
+
         // 從節點電壓計算差值
         // 需要更複雜的邏輯來追蹤節點對應關係
         // 目前簡化：使用歐姆定律 V = I * R

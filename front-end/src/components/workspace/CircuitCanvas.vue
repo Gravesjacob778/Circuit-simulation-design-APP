@@ -414,6 +414,11 @@ function updateComponentVisuals() {
   circuitStore.components.forEach((comp) => {
     const node = nodeManager?.getComponentNode(comp.id);
     if (node) {
+      // 同步 Konva Group 的位置與旋轉角度
+      node.x(comp.x);
+      node.y(comp.y);
+      node.rotation(comp.rotation);
+
       // 更新拖拉狀態：只有選取的元件才能拖拉
       node.draggable(comp.selected && !wiringStateManager?.isInWiringMode());
 
@@ -840,6 +845,15 @@ watch(
   () => circuitStore.selectedComponentId,
   () => {
     updateComponentVisuals();
+  }
+);
+
+// 監聽選取元件的旋轉角度變化（來自 RightPanel 按鈕）
+watch(
+  () => circuitStore.selectedComponent?.rotation,
+  () => {
+    updateComponentVisuals();
+    renderAllWires();
   }
 );
 

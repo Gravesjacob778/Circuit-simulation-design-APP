@@ -76,20 +76,7 @@ function handleValueChange(newValue: number) {
           </div>
         </div>
       </section>
-
-      <!-- AI Explanation Messages -->
-      <section class="section ai-messages">
-        <div
-          v-for="msg in aiMessages"
-          :key="msg.id"
-          class="ai-message"
-          :class="msg.type"
-        >
-          <p>{{ msg.content }}</p>
-        </div>
-      </section>
-
-      <!-- Selected Component Properties -->
+            <!-- Selected Component Properties -->
       <section v-if="selectedComponent" class="section component-props">
         <h4 class="section-title">Component Properties</h4>
         <div class="prop-grid">
@@ -120,10 +107,71 @@ function handleValueChange(newValue: number) {
           </div>
           <div class="prop-item">
             <label class="prop-label">Rotation</label>
-            <span class="prop-value">{{ selectedComponent.rotation }}°</span>
+            <div class="rotation-control">
+              <span class="prop-value">{{ selectedComponent.rotation }}°</span>
+              <div class="rotate-actions">
+                <button
+                  class="icon-btn"
+                  title="Rotate Left (-90°)"
+                  @click="circuitStore.rotateComponent(selectedComponent!.id, -90)"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="icon">
+                    <path
+                      d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M3 3v5h5"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+                <button
+                  class="icon-btn"
+                  title="Rotate Right (+90°)"
+                  @click="circuitStore.rotateComponent(selectedComponent!.id, 90)"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="icon">
+                    <path
+                      d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M21 3v5h-5"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
+      <!-- AI Explanation Messages
+      <section class="section ai-messages">
+        <div
+          v-for="msg in aiMessages"
+          :key="msg.id"
+          class="ai-message"
+          :class="msg.type"
+        >
+          <p>{{ msg.content }}</p>
+        </div>
+      </section> -->
+
+
     </div>
   </aside>
 </template>
@@ -292,4 +340,38 @@ function handleValueChange(newValue: number) {
   color: var(--color-text-muted);
   font-family: var(--font-family-mono);
 }
+
+/* Rotation Controls */
+.rotation-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rotate-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.icon-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  width: 28px;
+  height: 28px;
+}
+
+.icon-btn:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-muted);
+}
+
 </style>
