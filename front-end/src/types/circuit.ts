@@ -1,8 +1,8 @@
 /**
- * 電路元件與網表的型別定義
+ * Type definitions for circuit components and netlists
  */
 
-// 元件類型枚舉
+// Component type enumeration
 export type ComponentType =
     | 'resistor'
     | 'capacitor'
@@ -19,56 +19,56 @@ export type ComponentType =
     | 'ammeter'
     | 'voltmeter';
 
-// 端點 (Node) 定義
+// Port definition
 export interface Port {
     id: string;
     name: string; // e.g., '+', '-', 'in', 'out'
-    offsetX: number; // 相對於元件中心的 X 偏移
-    offsetY: number; // 相對於元件中心的 Y 偏移
+    offsetX: number; // X offset relative to component center
+    offsetY: number; // Y offset relative to component center
 }
 
-// 電路元件
+// Circuit component
 export interface CircuitComponent {
     id: string;
     type: ComponentType;
     x: number;
     y: number;
-    rotation: number; // 旋轉角度 (0, 90, 180, 270)
-    value?: number; // 數值 (如電阻值、電容值)
-    unit?: string; // 單位 (Ω, F, H, V, A)
-    label?: string; // 顯示標籤 (R1, C1, etc.)
+    rotation: number; // Rotation angle (0, 90, 180, 270)
+    value?: number; // Value (e.g., resistance, capacitance)
+    unit?: string; // Unit (Ω, F, H, V, A)
+    label?: string; // Display label (R1, C1, etc.)
     ports: Port[];
     selected?: boolean;
-    current?: number; // 運行時電流值 (Amps)，用於視覺回饋 (如 LED 發光)
+    current?: number; // Runtime current (Amps) for visual feedback (e.g., LED glowing)
 }
 
-// 導線連接
+// Wire connection
 export interface Wire {
     id: string;
     fromComponentId: string;
     fromPortId: string;
     toComponentId: string;
     toPortId: string;
-    points: { x: number; y: number }[]; // 導線路徑點
+    points: { x: number; y: number }[]; // Wire path points
 }
 
-// 節點 (電氣節點)
+// Net node (Electrical node)
 export interface NetNode {
     id: string;
     name: string; // e.g., 'N001', 'GND', 'VCC'
     connectedPorts: { componentId: string; portId: string }[];
 }
 
-// 網表 (Netlist) - 整個電路的資料結構
+// Netlist - Data structure for the entire circuit
 export interface Netlist {
     components: CircuitComponent[];
     wires: Wire[];
     nodes: NetNode[];
 }
 
-// 模擬結果數據
+// Simulation result data
 export interface SimulationData {
-    time: number[]; // 時間軸
+    time: number[]; // Time axis
     signals: {
         name: string; // e.g., 'V(N001)', 'I(R1)'
         values: number[];
@@ -77,7 +77,7 @@ export interface SimulationData {
     }[];
 }
 
-// 範例電路
+// Example circuit
 export interface ExampleCircuit {
     id: string;
     title: string;
@@ -86,12 +86,12 @@ export interface ExampleCircuit {
     netlist: Netlist;
 }
 
-// 元件定義（用於工具列）
+// Component definition (for toolbar)
 export interface ComponentDefinition {
     type: ComponentType;
     label: string;
-    icon: string; // SVG path 或 icon name
+    icon: string; // SVG path or icon name
     defaultValue?: number;
     defaultUnit?: string;
-    ports: Omit<Port, 'id'>[]; // 不含 id 的 port 定義，id 在建立時生成
+    ports: Omit<Port, 'id'>[]; // Port definition without id (id generated on creation)
 }

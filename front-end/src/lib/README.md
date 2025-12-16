@@ -73,6 +73,44 @@
 
 ---
 
+### 5. simulation/ - 電路模擬引擎
+
+包含核心電路模擬邏輯與規則檢查引擎。
+
+**核心模組：**
+
+#### `CircuitGraph.ts` - 電路拓撲圖
+從元件和導線建立電路連接關係 (Netlist)。
+- 負責節點合併 (Union-Find)
+- 識別接地節點
+- 建立元件印記 (Component Stamps)
+
+#### `MNASolver.ts` - MNA 求解器
+實作修正節點分析 (Modified Nodal Analysis) 演算法。
+- 求解 DC 穩態工作點
+- 支援電壓源、電流源、電阻、二極體等基本元件
+- 計算節點電壓與支路電流
+
+#### `CircuitRuleEngine.ts` - 設計規則檢查 (DRC)
+檢查電路連接是否存在邏輯錯誤。
+- 檢測短路 (電源短路、零歐姆迴路)
+- 檢測斷路 (懸空端點)
+- 驗證元件參數合理性
+
+#### `simulationOverlay.ts` - 視覺化數據生成
+將模擬結果轉換為前端顯示用的覆蓋層數據。
+- 計算電壓標籤位置
+- 生成電流方向箭頭
+- 格式化數值顯示 (SI 單位)
+
+**用途：**
+
+- 電路即時模擬
+- 錯誤檢測與提示
+- 電壓電流數值顯示
+
+---
+
 ## 使用原則
 
 1. **單一職責**：每個文件專注於一個功能領域
@@ -94,4 +132,8 @@ import { snapPosition, getNearestGridPoint } from '@/lib/gridUtils';
 
 // 智慧路由
 import { smartOrthogonalRoute, buildExistingWireSegments } from '@/lib/smartRouter';
+
+// 模擬引擎
+import { CircuitGraph, MNASolver, evaluateCircuitDesignRules } from '@/lib/simulation';
+import { buildDCSimulationOverlayLabels } from '@/lib/simulation/simulationOverlay';
 ```

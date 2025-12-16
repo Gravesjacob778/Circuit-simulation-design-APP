@@ -1,10 +1,19 @@
 import type { CircuitComponent, Wire } from '@/types/circuit';
 import type { CircuitRuleViolation, CircuitRuleEngineOptions, RuleSeverity } from './SimulationTypes';
 
+/**
+ * Unique identifier for an electrical node.
+ */
 type NodeId = string;
 
+/**
+ * A component with exactly two terminals/ports.
+ */
 type TwoTerminalComponent = CircuitComponent & { ports: [CircuitComponent['ports'][number], CircuitComponent['ports'][number]] };
 
+/**
+ * Represents an edge in the component graph connecting two electrical nodes.
+ */
 type ComponentEdge = {
   componentId: string;
   type: CircuitComponent['type'];
@@ -16,26 +25,46 @@ type ComponentEdge = {
 const ZERO_OHM_THRESHOLD_OHMS = 0.01; // 10mΩ (PWR-002 Normative)
 const DEFAULT_R_MIN_OHMS = 10; // CUR-001 Normative (overrideable)
 
+/**
+ * Checks if the component type allows it to be treated as an ideal voltage source.
+ * Includes DC and AC sources.
+ */
 function isIdealVoltageSourceType(type: CircuitComponent['type']): boolean {
   return type === 'dc_source' || type === 'ac_source';
 }
 
+/**
+ * Checks if the component type is a capacitor.
+ */
 function isCapacitorType(type: CircuitComponent['type']): boolean {
   return type === 'capacitor';
 }
 
+/**
+ * Checks if the component type is an inductor.
+ */
 function isInductorType(type: CircuitComponent['type']): boolean {
   return type === 'inductor';
 }
 
+/**
+ * Checks if the component type is an LED.
+ */
 function isLEDType(type: CircuitComponent['type']): boolean {
   return type === 'led';
 }
 
+/**
+ * Checks if the component type is a non-linear device (Diode, LED, Transistor).
+ */
 function isNonLinearDeviceType(type: CircuitComponent['type']): boolean {
   return type === 'diode' || type === 'led' || type === 'transistor_npn' || type === 'transistor_pnp';
 }
 
+/**
+ * Returns the effective resistance of a component for simulation rule checking.
+ * Returns null if the component does not have a static linear resistance.
+ */
 function getEffectiveResistanceOhms(component: CircuitComponent): number | null {
   switch (component.type) {
     case 'resistor':
@@ -51,18 +80,30 @@ function getEffectiveResistanceOhms(component: CircuitComponent): number | null 
   }
 }
 
+/**
+ * Type guard to check if a component has at least 2 ports.
+ */
 function isTwoTerminalComponent(component: CircuitComponent): component is TwoTerminalComponent {
   return component.ports.length >= 2;
 }
 
+/**
+ * Checks if a component is a two-terminal ideal voltage source.
+ */
 function isTwoTerminalIdealVoltageSource(component: CircuitComponent): component is TwoTerminalComponent {
   return isIdealVoltageSourceType(component.type) && isTwoTerminalComponent(component);
 }
 
+/**
+ * Checks if a component is a two-terminal LED.
+ */
 function isTwoTerminalLED(component: CircuitComponent): component is TwoTerminalComponent {
   return isLEDType(component.type) && isTwoTerminalComponent(component);
 }
 
+/**
+ * Helper to add a violation record to the violations list.
+ */
 function addViolation(
   out: CircuitRuleViolation[],
   ruleId: string,
@@ -74,6 +115,9 @@ function addViolation(
   out.push({ ruleId, severity, componentIds, message, recommendation });
 }
 
+/**
+ * Creates a Union-Find (Disjoint Set) data structure for a set of keys.
+ */
 function makeUnionFind(keys: string[]): {
   parent: Map<string, string>;
   find: (key: string) => string;
@@ -101,6 +145,10 @@ function makeUnionFind(keys: string[]): {
   return { parent, find, union };
 }
 
+/**
+ * Groups connected ports into electrical nodes using Union-Find.
+ * Returns mappings from ports to nodes, and identifies the ground node.
+ */
 function buildElectricalNodes(
   components: CircuitComponent[],
   wires: Wire[]
@@ -158,6 +206,9 @@ function buildElectricalNodes(
   return { portToRoot: uf.parent, rootToNodeId, groundRoot, nodeToConnectedComponents };
 }
 
+/**
+ * Resolves the NodeId for a specific port on a component.
+ */
 function getNodeIdForPort(
   rootToNodeId: Map<string, NodeId>,
   findRoot: (key: string) => string,
@@ -169,6 +220,9 @@ function getNodeIdForPort(
   return rootToNodeId.get(root) ?? null;
 }
 
+/**
+ * Constructs graph edges representing components connecting electrical nodes.
+ */
 function buildComponentEdges(
   components: CircuitComponent[],
   findRoot: (key: string) => string,
@@ -194,6 +248,9 @@ function buildComponentEdges(
   return edges;
 }
 
+/**
+ * Adds an undirected edge to an adjacency list.
+ */
 function addUndirectedEdge<T>(
   adjacency: Map<NodeId, T[]>,
   from: NodeId,
@@ -203,6 +260,10 @@ function addUndirectedEdge<T>(
   adjacency.get(from)!.push(entry);
 }
 
+/**
+ * Performs BFS to find all reachable nodes from a start node in the given adjacency graph.
+ * Optionally skips edges belonging to a specific component.
+ */
 function bfsReachable(
   adjacency: Map<NodeId, Array<{ to: NodeId; componentId: string }>>,
   start: NodeId,
@@ -227,6 +288,10 @@ function bfsReachable(
   return visited;
 }
 
+/**
+ * Builds an adjacency graph considering only 0-Ohm (or near 0-Ohm) components.
+ * Used for detecting short circuits.
+ */
 function buildZeroOhmAdjacency(edges: ComponentEdge[]): Map<NodeId, Array<{ to: NodeId; componentId: string }>> {
   const adjacency = new Map<NodeId, Array<{ to: NodeId; componentId: string }>>();
 
@@ -248,6 +313,9 @@ function buildZeroOhmAdjacency(edges: ComponentEdge[]): Map<NodeId, Array<{ to: 
   return adjacency;
 }
 
+/**
+ * Builds a full adjacency graph including all component connections.
+ */
 function buildAllComponentAdjacency(edges: ComponentEdge[]): Map<NodeId, Array<{ to: NodeId; componentId: string }>> {
   const adjacency = new Map<NodeId, Array<{ to: NodeId; componentId: string }>>();
   for (const e of edges) {
@@ -257,6 +325,9 @@ function buildAllComponentAdjacency(edges: ComponentEdge[]): Map<NodeId, Array<{
   return adjacency;
 }
 
+/**
+ * Groups nodes that are connected by 0-Ohm paths into integer group IDs.
+ */
 function computeZeroOhmGroups(
   nodeIds: Iterable<NodeId>,
   zeroOhmAdjacency: Map<NodeId, Array<{ to: NodeId; componentId: string }>>
@@ -283,6 +354,10 @@ function computeZeroOhmGroups(
   return groupByNode;
 }
 
+/**
+ * Identifies nodes that are part of any closed loop (cycle) in the circuit graph.
+ * Uses Tarjan's bridge-finding algorithm or similar DFS approach to find cycles.
+ */
 function computeNodesInAnyClosedLoop(
   nodeIds: NodeId[],
   edges: ComponentEdge[]
@@ -339,6 +414,10 @@ function computeNodesInAnyClosedLoop(
   return inLoop;
 }
 
+/**
+ * Evaluates a set of design rules against the circuit.
+ * Checks for issues like short circuits, floating nodes, and missing current limiting.
+ */
 export function evaluateCircuitDesignRules(
   components: CircuitComponent[],
   wires: Wire[],
@@ -359,6 +438,7 @@ export function evaluateCircuitDesignRules(
     return current;
   };
 
+  // PWR-001: No ground reference (nodeId = 0) in circuit.
   // PWR-001: Circuit 中不存在 nodeId = 0
   if (!components.some((c) => c.type === 'ground')) {
     addViolation(
@@ -380,6 +460,7 @@ export function evaluateCircuitDesignRules(
 
   const sources = components.filter(isTwoTerminalIdealVoltageSource);
 
+  // PWR-002: Ideal voltage source shorted (including equivalent 0Ω path).
   // PWR-002: 理想電壓源短路（含等效 0Ω 路徑）
   for (const src of sources) {
     const nPos = getNodeIdForPort(nodeBuild.rootToNodeId, findRoot, src.id, src.ports[0].id);
@@ -411,6 +492,7 @@ export function evaluateCircuitDesignRules(
     }
   }
 
+  // TOP-002: Open loop (no return path from source positive to negative terminal).
   // TOP-002: 未閉合回路（source 正端到負端無回路）
   for (const src of sources) {
     const nPos = getNodeIdForPort(nodeBuild.rootToNodeId, findRoot, src.id, src.ports[0].id);
@@ -430,6 +512,7 @@ export function evaluateCircuitDesignRules(
     }
   }
 
+  // REA-001 / REA-002: Capacitor/Inductor connected directly to ideal voltage source (no series impedance).
   // REA-001 / REA-002: C/L 直接接理想電壓源（無串聯阻抗）
   for (const src of sources) {
     const nPos = getNodeIdForPort(nodeBuild.rootToNodeId, findRoot, src.id, src.ports[0].id);
@@ -480,6 +563,7 @@ export function evaluateCircuitDesignRules(
     }
   }
 
+  // CUR-001: LED lacks computable current limiting.
   // CUR-001: LED 缺少可計算之電流限制
   const limitingComponentIds = new Set(
     edges
@@ -529,6 +613,7 @@ export function evaluateCircuitDesignRules(
     }
   }
 
+  // CUR-002: Non-linear device directly connected to ideal source (no obvious current limiting).
   // CUR-002: 非線性元件直接接理想源（無明顯限流元件）
   for (const src of sources) {
     const nPos = getNodeIdForPort(nodeBuild.rootToNodeId, findRoot, src.id, src.ports[0].id);
@@ -566,6 +651,7 @@ export function evaluateCircuitDesignRules(
     }
   }
 
+  // TOP-001: Floating node.
   // TOP-001: 浮接節點
   const groundNodeId = nodeBuild.groundRoot ? nodeBuild.rootToNodeId.get(nodeBuild.groundRoot) : null;
   const nodesInLoop = computeNodesInAnyClosedLoop(Array.from(nodeBuild.nodeToConnectedComponents.keys()), edges);
