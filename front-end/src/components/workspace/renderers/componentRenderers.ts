@@ -392,7 +392,7 @@ export function drawLED(group: Konva.Group, component: CircuitComponent) {
         stroke: strokeColor,
         strokeWidth: strokeWidth,
     });
-    
+
     // 右側連線 (Cathode)
     const line2 = new Konva.Line({
         points: [10, 0, 40, 0],
@@ -441,14 +441,14 @@ export function drawLED(group: Konva.Group, component: CircuitComponent) {
             name: 'led-arrow', // 用於動畫搜尋
             visible: true,
         });
-        
+
         // 如果導通，添加發光效果
         if (isConducting) {
             arrow.shadowColor(arrowColor);
             arrow.shadowBlur(10);
             arrow.shadowOpacity(0.8);
         }
-        
+
         group.add(arrow);
     });
 

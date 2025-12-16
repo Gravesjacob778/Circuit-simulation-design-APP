@@ -163,7 +163,46 @@
 
 ---
 
+---
+## Rule UI-001：節點電壓 reference 不明確
 
+Severity：ERROR（對教學型工具）
+
+條件：
+
+顯示的節點電壓與 KVL 計算不一致
+
+說明：
+
+節點電壓必須明確標示 reference（GND / local / relative）
+---
+
+
+---
+### Rule LED-001：LED 未達可見發光條件
+
+Severity：INFO（或 WARNING，取決於教學模式）
+
+條件（Formal）：
+
+LED 導通（Vf 已達）
+
+但 I_LED < I_emit_min
+
+預設參數：
+
+I_emit_min = 1 mA（可依 LED 型號覆寫）
+
+說明：
+
+LED 已導通，但電流不足以產生可見亮度
+
+UI 建議：
+
+LED 顯示為「微亮 / 不亮」
+
+Tooltip：Current below visible emission threshold
+---
 ## 9. 規則輸出格式（Machine-Readable Contract）
 
 ```json

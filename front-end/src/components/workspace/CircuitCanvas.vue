@@ -165,8 +165,19 @@ function getComponentWithState(component: CircuitComponent): CircuitComponent {
 
 /**
  * 更新 LED 動畫狀態
+ * 依據 Rule LED-001：
+ * - I_LED >= 1mA (I_emit_min)：完全發光（閃爍動畫）
+ * - 0 < I_LED < 1mA：微亮（靜態低透明度）
+ * - I_LED <= 0：不亮
  */
 function updateLEDAnimations() {
+  // LED 最小可見發光電流門檻 (mA)，參照 Rule LED-001
+  const I_EMIT_MIN_MA = 1.0;
+  // 微亮透明度 (導通但電流不足)
+  const DIM_OPACITY = 0.35;
+  // 不亮時的預設透明度 (在 drawLED 中定義為 0.2)
+  const OFF_OPACITY = 0.2;
+
   // 清除失效的動畫
   const activeIds = new Set(circuitStore.components.map(c => c.id));
   for (const [id, anim] of ledAnimations.entries()) {
@@ -182,13 +193,16 @@ function updateLEDAnimations() {
       if (!node) return;
 
       const currentMA = circuitStore.getComponentCurrent(comp.id);
-      const isConducting = currentMA !== null && currentMA > 0.1; // > 0.1 mA
+      const arrows = node.find('.led-arrow');
+      if (arrows.length === 0) return;
 
-      if (isConducting) {
+      // 判斷 LED 狀態
+      const isFullyLit = currentMA !== null && currentMA >= I_EMIT_MIN_MA;
+      const isDim = currentMA !== null && currentMA > 0 && currentMA < I_EMIT_MIN_MA;
+
+      if (isFullyLit) {
+        // 完全發光：啟動閃爍動畫
         if (!ledAnimations.has(comp.id)) {
-          const arrows = node.find('.led-arrow');
-          if (arrows.length === 0) return;
-
           const anim = new Konva.Animation((frame) => {
             if (!frame) return;
             // 閃爍頻率約 5Hz
@@ -199,15 +213,20 @@ function updateLEDAnimations() {
           anim.start();
           ledAnimations.set(comp.id, anim);
         }
-      } else {
-        // 停止動畫
+      } else if (isDim) {
+        // 微亮：停止動畫，設定為靜態低透明度
         if (ledAnimations.has(comp.id)) {
           ledAnimations.get(comp.id)?.stop();
           ledAnimations.delete(comp.id);
-          // 恢復預設透明度 (在 drawLED 中定義為 0.2)
-          const arrows = node.find('.led-arrow');
-          arrows.forEach(arrow => arrow.opacity(0.2));
         }
+        arrows.forEach(arrow => arrow.opacity(DIM_OPACITY));
+      } else {
+        // 不亮：停止動畫，恢復預設透明度
+        if (ledAnimations.has(comp.id)) {
+          ledAnimations.get(comp.id)?.stop();
+          ledAnimations.delete(comp.id);
+        }
+        arrows.forEach(arrow => arrow.opacity(OFF_OPACITY));
       }
     }
   });
