@@ -6,8 +6,42 @@
 
 import { useCircuitStore } from '@/stores/circuitStore';
 import { Eye, Scissors, Undo2, Redo2, Scan, Zap } from 'lucide-vue-next';
+import { computed } from 'vue';
 
 const circuitStore = useCircuitStore();
+
+const ruleErrors = computed(() => circuitStore.ruleViolations.filter((v) => v.severity === 'ERROR'));
+const ruleWarnings = computed(() => circuitStore.ruleViolations.filter((v) => v.severity === 'WARNING'));
+
+const topAlert = computed(() => {
+  if (ruleErrors.value.length > 0) {
+    const first = ruleErrors.value[0]!;
+    return {
+      severity: 'ERROR',
+      count: ruleErrors.value.length,
+      text: `${first.ruleId}: ${first.message}`,
+    } as const;
+  }
+
+  if (circuitStore.simulationError) {
+    return {
+      severity: 'ERROR',
+      count: null,
+      text: circuitStore.simulationError,
+    } as const;
+  }
+
+  if (ruleWarnings.value.length > 0) {
+    const first = ruleWarnings.value[0]!;
+    return {
+      severity: 'WARNING',
+      count: ruleWarnings.value.length,
+      text: `${first.ruleId}: ${first.message}`,
+    } as const;
+  }
+
+  return null;
+});
 
 function handleUndo() {
   if (circuitStore.canUndo) {
@@ -69,8 +103,10 @@ function handleToggleCurrentAnimation() {
 
     <!-- 中間狀態 / 錯誤提示 -->
     <div class="center-group">
-      <div v-if="circuitStore.simulationError" class="simulation-error" role="alert">
-        {{ circuitStore.simulationError }}
+      <div v-if="topAlert"
+        :class="topAlert.severity === 'ERROR' ? 'simulation-error' : 'simulation-warning'"
+        role="alert">
+        {{ topAlert.count && topAlert.count > 1 ? `(${topAlert.count}) ` : '' }}{{ topAlert.text }}
       </div>
     </div>
 
@@ -124,6 +160,19 @@ function handleToggleCurrentAnimation() {
   border: 1px solid var(--color-accent-red);
   background-color: var(--color-bg-secondary);
   color: var(--color-accent-red);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.simulation-warning {
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #ffb300;
+  background-color: var(--color-bg-secondary);
+  color: #ffb300;
   font-size: var(--font-size-sm);
   white-space: nowrap;
   overflow: hidden;

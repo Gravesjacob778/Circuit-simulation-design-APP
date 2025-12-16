@@ -10,10 +10,30 @@ export interface DCSimulationResult {
   nodeVoltages: Map<string, number>;
   /** 支路電流 (元件ID → 電流值 A) */
   branchCurrents: Map<string, number>;
+  /** CDRS v1 rule violations (pre-simulation checks) */
+  ruleViolations?: CircuitRuleViolation[];
   /** 是否成功 */
   success: boolean;
   /** 錯誤訊息 */
   error?: string;
+}
+
+/**
+ * Circuit Design Rules (CDRS v1)
+ */
+export type RuleSeverity = 'ERROR' | 'WARNING' | 'INFO';
+
+export interface CircuitRuleViolation {
+  ruleId: string;
+  severity: RuleSeverity;
+  componentIds: string[];
+  message: string;
+  recommendation?: string;
+}
+
+export interface CircuitRuleEngineOptions {
+  /** CUR-001 Normative: default R_min = 10Ω (overrideable by system parameter). */
+  rMinOhms?: number;
 }
 
 /**

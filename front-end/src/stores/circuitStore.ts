@@ -14,7 +14,7 @@ import type {
     SimulationData,
 } from '@/types/circuit';
 import { getComponentDefinition } from '@/config/componentDefinitions';
-import { runDCAnalysis, type DCSimulationResult } from '@/lib/simulation';
+import { evaluateCircuitDesignRules, runDCAnalysis, type CircuitRuleViolation, type DCSimulationResult } from '@/lib/simulation';
 
 export const useCircuitStore = defineStore('circuit', () => {
     // ===== State =====
@@ -28,6 +28,7 @@ export const useCircuitStore = defineStore('circuit', () => {
     const isCurrentAnimating = ref(false); // 電流流動動畫狀態
     const dcResult = ref<DCSimulationResult | null>(null); // DC 模擬結果
     const simulationError = ref<string | null>(null); // 模擬錯誤訊息
+    const ruleViolations = ref<CircuitRuleViolation[]>([]); // CDRS v1 規則檢查結果
 
     // Undo/Redo History
     // 使用 JSON 字串儲存快照，避免物件參考問題
@@ -352,6 +353,7 @@ export const useCircuitStore = defineStore('circuit', () => {
             dcResult.value = null;
             simulationError.value = null;
             simulationData.value = null;
+            ruleViolations.value = [];
         }
     }
 
@@ -361,6 +363,16 @@ export const useCircuitStore = defineStore('circuit', () => {
     function runSimulation(): boolean {
         isSimulating.value = true;
         simulationError.value = null;
+        ruleViolations.value = evaluateCircuitDesignRules(components.value, wires.value);
+
+        const blockingErrors = ruleViolations.value.filter((v) => v.severity === 'ERROR');
+        if (blockingErrors.length > 0) {
+            dcResult.value = null;
+            simulationData.value = null;
+            simulationError.value = blockingErrors[0]?.message ?? 'Circuit rule violation (ERROR)';
+            isSimulating.value = false;
+            return false;
+        }
         
         try {
             const result = runDCAnalysis(components.value, wires.value);
@@ -463,6 +475,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         isCurrentAnimating,
         dcResult,
         simulationError,
+        ruleViolations,
         canUndo,
         canRedo,
         // Getters
