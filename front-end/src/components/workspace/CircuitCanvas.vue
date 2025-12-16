@@ -98,12 +98,40 @@ function renderSimulationLabels() {
   group.destroyChildren();
 
   for (const label of labels) {
+    if (label.kind === 'currentDirectionArrow') {
+      const radius = label.radius ?? 9;
+      const halfWidth = radius * 0.9;
+      // Centered triangle pointing "up" at rotation 0.
+      const arrow = new Konva.Line({
+        id: label.id,
+        x: label.x,
+        y: label.y,
+        points: [
+          0, -(4 * radius) / 3,
+          -halfWidth, (2 * radius) / 3,
+          halfWidth, (2 * radius) / 3,
+        ],
+        closed: true,
+        rotation: label.rotation,
+        fill: '#66bb6a',
+        stroke: '#66bb6a',
+        strokeWidth: 1,
+        shadowColor: '#000',
+        shadowBlur: 6,
+        shadowOpacity: 0.75,
+        listening: false,
+      });
+      group.add(arrow);
+      continue;
+    }
+
     const isVoltage = label.kind === 'nodeVoltage';
     const textNode = new Konva.Text({
       id: label.id,
       x: label.x,
       y: label.y,
       text: label.text,
+      rotation: label.rotation ?? 0,
       fontSize: isVoltage ? 22 : 20,
       fontStyle: 'bold',
       fill: isVoltage ? '#42a5f5' : '#66bb6a',

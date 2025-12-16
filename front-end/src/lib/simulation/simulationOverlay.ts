@@ -3,15 +3,33 @@ import type { DCSimulationResult } from './SimulationTypes';
 import { CircuitGraph } from './CircuitGraph';
 import { getRotatedPortPosition } from '@/lib/geometryUtils';
 
-export type SimulationOverlayLabelKind = 'nodeVoltage' | 'componentCurrent';
+export type SimulationOverlayItemKind = 'nodeVoltage' | 'componentCurrent' | 'currentDirectionArrow';
 
-export type SimulationOverlayLabel = {
-  id: string;
-  kind: SimulationOverlayLabelKind;
-  x: number;
-  y: number;
-  text: string;
-};
+export type SimulationOverlayItem =
+  | {
+      id: string;
+      kind: 'nodeVoltage';
+      x: number;
+      y: number;
+      text: string;
+      rotation?: number;
+    }
+  | {
+      id: string;
+      kind: 'componentCurrent';
+      x: number;
+      y: number;
+      text: string;
+      rotation?: number;
+    }
+  | {
+      id: string;
+      kind: 'currentDirectionArrow';
+      x: number;
+      y: number;
+      rotation: number;
+      radius?: number;
+    };
 
 type Point = { x: number; y: number };
 
@@ -89,6 +107,19 @@ export function formatCurrentLabel(amps: number): string {
   ]);
 }
 
+function rotateVector(dx: number, dy: number, deg: number): Point {
+  const rad = (deg * Math.PI) / 180;
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  return { x: dx * c - dy * s, y: dx * s + dy * c };
+}
+
+function normalizeVector(dx: number, dy: number): Point {
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return { x: 0, y: 0 };
+  return { x: dx / len, y: dy / len };
+}
+
 function getPortWorldPosition(
   components: CircuitComponent[],
   componentId: string,
@@ -104,6 +135,58 @@ function getPortWorldPosition(
 
 function getComponentById(components: CircuitComponent[], componentId: string): CircuitComponent | null {
   return components.find((c) => c.id === componentId) ?? null;
+}
+
+function getComponentAxisVector(comp: CircuitComponent): Point {
+  if (comp.ports.length < 2) return rotateVector(1, 0, comp.rotation);
+  const p1 = comp.ports[0]!;
+  const p2 = comp.ports[1]!;
+  const localDx = p2.offsetX - p1.offsetX;
+  const localDy = p2.offsetY - p1.offsetY;
+  return rotateVector(localDx, localDy, comp.rotation);
+}
+
+function getComponentCurrentLabelAnchor(comp: CircuitComponent): { pos: Point; rotation: number } {
+  const axis = getComponentAxisVector(comp);
+  const isVertical = Math.abs(axis.y) >= Math.abs(axis.x);
+  if (isVertical) {
+    return { pos: { x: comp.x - 55, y: comp.y - 10 }, rotation: -90 };
+  }
+  return { pos: { x: comp.x - 10, y: comp.y - 55 }, rotation: 0 };
+}
+
+function getSourceCurrentDirectionArrow(
+  comp: CircuitComponent,
+  sourceCurrentA: number
+): SimulationOverlayItem | null {
+  if (comp.ports.length < 2) return null;
+  if (Math.abs(sourceCurrentA) < 1e-9) return null;
+
+  // MNA current variable is defined from port[0] -> port[1] (for sources: '+' -> '-').
+  // If the value is negative, the physical current flows opposite (from '-' -> '+').
+  const leavingPortIndex = sourceCurrentA < 0 ? 0 : 1;
+  const port = comp.ports[leavingPortIndex]!;
+  const portPos = getRotatedPortPosition(comp.x, comp.y, port.offsetX, port.offsetY, comp.rotation);
+
+  const outwardVec = rotateVector(port.offsetX, port.offsetY, comp.rotation);
+  const outward = normalizeVector(outwardVec.x, outwardVec.y);
+
+  const arrowDistance = 18;
+  const arrowPos = {
+    x: portPos.x + outward.x * arrowDistance,
+    y: portPos.y + outward.y * arrowDistance,
+  };
+
+  const rotation = (Math.atan2(outward.y, outward.x) * 180) / Math.PI + 90;
+
+  return {
+    id: `ia:${comp.id}`,
+    kind: 'currentDirectionArrow',
+    x: arrowPos.x,
+    y: arrowPos.y,
+    rotation,
+    radius: 9,
+  };
 }
 
 function getNodeLabelAnchor(
@@ -161,19 +244,9 @@ function getNodeLabelAnchor(
   return meanPoint(points);
 }
 
-function getComponentCurrentLabelAnchor(comp: CircuitComponent): Point {
-  const rot = ((comp.rotation % 360) + 360) % 360;
-  const isVertical = rot === 90 || rot === 270;
-  // Place current label slightly off the component body
-  if (isVertical) {
-    return { x: comp.x - 55, y: comp.y - 10 };
-  }
-  return { x: comp.x - 10, y: comp.y - 55 };
-}
-
 function isCurrentLabelComponentType(type: CircuitComponent['type']): boolean {
   // Minimal overlay: only show current on the source + resistors.
-  return type === 'dc_source' || type === 'resistor';
+  return type === 'dc_source' || type === 'ac_source' || type === 'resistor';
 }
 
 function nodeLabelOffset(
@@ -222,10 +295,10 @@ export function buildDCSimulationOverlayLabels(
   components: CircuitComponent[],
   wires: Wire[],
   dcResult: DCSimulationResult
-): SimulationOverlayLabel[] {
+): SimulationOverlayItem[] {
   if (!dcResult.success) return [];
 
-  const labels: SimulationOverlayLabel[] = [];
+  const labels: SimulationOverlayItem[] = [];
   const graph = new CircuitGraph();
   graph.build(components, wires);
 
@@ -254,14 +327,21 @@ export function buildDCSimulationOverlayLabels(
     // Filter near-zero currents to reduce clutter.
     if (Math.abs(currentA) < 1e-9) continue;
 
-    const anchor = getComponentCurrentLabelAnchor(comp);
+    const { pos, rotation } = getComponentCurrentLabelAnchor(comp);
+    const isSource = comp.type === 'dc_source' || comp.type === 'ac_source';
     labels.push({
       id: `i:${comp.id}`,
       kind: 'componentCurrent',
-      x: anchor.x,
-      y: anchor.y,
-      text: formatCurrentLabel(currentA),
+      x: pos.x,
+      y: pos.y,
+      text: isSource ? formatCurrentLabel(Math.abs(currentA)) : formatCurrentLabel(currentA),
+      rotation,
     });
+
+    if (isSource) {
+      const arrow = getSourceCurrentDirectionArrow(comp, currentA);
+      if (arrow) labels.push(arrow);
+    }
   }
 
   return labels;
