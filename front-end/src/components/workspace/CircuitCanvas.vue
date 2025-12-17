@@ -19,6 +19,7 @@ import { KonvaEventHandler } from '@/utils/KonvaEventHandler';
 import { WiringStateManager } from '@/utils/WiringStateManager';
 import { drawGuides, clearGuides, drawGrid, drawWiringPreview, clearTempLayer } from '@/utils/konvaUtils';
 import { buildDCSimulationOverlayLabels } from '@/lib/simulation/simulationOverlay';
+import { I_EMIT_MIN } from '@/lib/simulation/SimulationTypes';
 
 const circuitStore = useCircuitStore();
 const uiStore = useUIStore();
@@ -172,7 +173,8 @@ function getComponentWithState(component: CircuitComponent): CircuitComponent {
  */
 function updateLEDAnimations() {
   // LED 最小可見發光電流門檻 (mA)，參照 Rule LED-001
-  const I_EMIT_MIN_MA = 1.0;
+  // 從 SimulationTypes.ts 中導入 I_EMIT_MIN (單位 A)，轉換為 mA
+  const I_EMIT_MIN_MA = I_EMIT_MIN * 1000; // 0.001A = 1mA
   // 微亮透明度 (導通但電流不足)
   const DIM_OPACITY = 0.35;
   // 不亮時的預設透明度 (在 drawLED 中定義為 0.2)

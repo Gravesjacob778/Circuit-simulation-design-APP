@@ -40,6 +40,9 @@ export interface CircuitComponent {
     ports: Port[];
     selected?: boolean;
     current?: number; // Runtime current (Amps) for visual feedback (e.g., LED glowing)
+    // LED-specific properties (LED-001 Rule)
+    ledColor?: 'Red' | 'Green' | 'Blue' | 'White'; // LED color for V_f lookup
+    vfOverride?: number; // User-defined forward voltage (V), takes precedence over ledColor
 }
 
 // Wire connection

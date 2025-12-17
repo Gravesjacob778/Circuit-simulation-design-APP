@@ -1,5 +1,6 @@
 import type { CircuitComponent, Wire } from '@/types/circuit';
-import type { CircuitRuleViolation, CircuitRuleEngineOptions, RuleSeverity } from './SimulationTypes';
+import type { CircuitRuleViolation, CircuitRuleEngineOptions, RuleSeverity, DCSimulationResult } from './SimulationTypes';
+import { I_EMIT_MIN } from './SimulationTypes';
 
 /**
  * Unique identifier for an electrical node.
@@ -683,3 +684,60 @@ export function evaluateCircuitDesignRules(
 
   return violations;
 }
+
+/**
+ * LED-001 規則評估（模擬後執行）
+ * 
+ * 當 LED 處於以下狀態時觸發：
+ * 1. LED 已導通 (V_LED >= V_f)
+ * 2. LED 電流低於可見發光門檻 (I_LED < I_emit_min)
+ * 
+ * 規則嚴重等級：INFO（教學模式可升級為 WARNING）
+ * 
+ * @param components 電路元件列表
+ * @param simulationResult 模擬結果
+ * @param teachingMode 是否為教學模式（升級為 WARNING）
+ */
+export function evaluateLED001Rule(
+  components: CircuitComponent[],
+  simulationResult: DCSimulationResult,
+  teachingMode = false
+): CircuitRuleViolation[] {
+  const violations: CircuitRuleViolation[] = [];
+
+  if (!simulationResult.success) {
+    return violations;
+  }
+
+  const leds = components.filter(c => c.type === 'led');
+
+  for (const led of leds) {
+    const current = simulationResult.branchCurrents.get(led.id);
+
+    // 如果沒有電流數據，跳過
+    if (current === undefined) continue;
+
+    // 注意：未來可根據 LED 的 V_f (vfOverride > ledColor > 預設值) 進行更精確的導通判斷
+    // 目前使用電流 > 0 來判斷導通狀態（MNA 求解器已在內部處理 V_f 閾值）
+
+    // LED-001 觸發條件：
+    // 1. 電流 > 0 表示導通（V_LED >= V_f）
+    // 2. 電流 < I_emit_min 表示低於可見發光門檻
+    const isConducting = current > 0;
+    const isBelowEmitThreshold = current < I_EMIT_MIN;
+
+    if (isConducting && isBelowEmitThreshold) {
+      addViolation(
+        violations,
+        'LED-001',
+        teachingMode ? 'WARNING' : 'INFO',
+        [led.id],
+        `LED "${led.label || led.id}" is conducting (I = ${(current * 1000).toFixed(3)}mA) but current is below visible emission threshold (${I_EMIT_MIN * 1000}mA).`,
+        'This is physically correct but the LED will not emit visible light. Increase current or verify circuit design.'
+      );
+    }
+  }
+
+  return violations;
+}
+

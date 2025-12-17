@@ -420,8 +420,15 @@ export function drawLED(group: Konva.Group, component: CircuitComponent) {
     // 如果沒有模擬數據 (current undefined)，預設不發光
     const isConducting = component.current !== undefined && component.current > 0.0001;
 
-    // 發光箭頭 (黃色)
-    const arrowColor = '#ffeb3b';
+    // 根據 LED 顏色屬性決定發光顏色
+    // LED-001 規範：支援 Red, Green, Blue, White 顏色
+    const LED_COLORS: Record<string, string> = {
+        Red: '#ff4444',
+        Green: '#44ff44',
+        Blue: '#4488ff',
+        White: '#ffffff',
+    };
+    const arrowColor = component.ledColor ? (LED_COLORS[component.ledColor] ?? '#ffeb3b') : '#ffeb3b';
     const arrowDates = [
         { x: 0, y: -15 },
         { x: 10, y: -15 }

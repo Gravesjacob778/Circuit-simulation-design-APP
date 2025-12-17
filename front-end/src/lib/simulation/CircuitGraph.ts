@@ -5,6 +5,7 @@
 
 import type { CircuitComponent, Wire } from '@/types/circuit';
 import type { CircuitNode, ComponentStamp } from './SimulationTypes';
+import { LED_VF_DEFAULT, type LEDColor } from './SimulationTypes';
 
 /**
  * 電路圖類
@@ -149,7 +150,19 @@ export class CircuitGraph {
     const node2Index = node2?.isGround ? -1 : (node2Id ? (this.nodeIndexMap.get(node2Id) ?? -1) : -1);
 
     // 取得元件值
-    const value = comp.value ?? this.getDefaultValue(comp.type);
+    // LED-001 規範：LED 的 V_f 優先順序 vfOverride > ledColor lookup > 預設值
+    let value: number;
+    if (comp.type === 'led') {
+      if (comp.vfOverride !== undefined) {
+        value = comp.vfOverride;
+      } else if (comp.ledColor && LED_VF_DEFAULT[comp.ledColor as LEDColor]) {
+        value = LED_VF_DEFAULT[comp.ledColor as LEDColor];
+      } else {
+        value = comp.value ?? 2.0; // 預設 LED V_f = 2.0V
+      }
+    } else {
+      value = comp.value ?? this.getDefaultValue(comp.type);
+    }
 
     // 建立印記
     const stamp: ComponentStamp = {

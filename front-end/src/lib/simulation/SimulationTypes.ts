@@ -2,6 +2,30 @@
  * SimulationTypes.ts - 模擬相關的類型定義
  */
 
+// ========== LED-001 規範常數 (Circuit Design Rule Specification v1.1) ==========
+/**
+ * LED 顏色類型
+ */
+export type LEDColor = 'Red' | 'Green' | 'Blue' | 'White';
+
+/**
+ * LED 順向電壓預設值 (單位: Volt)
+ * 參照 LED_RULE.md Section 8.1
+ */
+export const LED_VF_DEFAULT: Record<LEDColor, number> = {
+  Red: 1.8,
+  Green: 2.1,
+  Blue: 3.0,
+  White: 3.0,
+};
+
+/**
+ * LED 最小可見發光電流門檻 (單位: Ampere)
+ * I_LED < I_emit_min 時，LED 導通但不可見發光
+ * 參照 LED_RULE.md Section 8.1
+ */
+export const I_EMIT_MIN = 0.001; // 1mA
+
 /**
  * 模擬結果
  */

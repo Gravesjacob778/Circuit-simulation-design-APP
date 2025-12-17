@@ -18,6 +18,15 @@ const props = withDefaults(defineProps<Props>(), {
   exampleTitle: 'KCL and current divider',
 });
 
+// LED 顏色選項 (對應 LED_RULE.md 規範)
+const LED_COLOR_OPTIONS = [
+  { value: '', label: '(預設)', color: '#ffeb3b', vf: '2.0V' },
+  { value: 'Red', label: '🔴 Red', color: '#ff4444', vf: '1.8V' },
+  { value: 'Green', label: '🟢 Green', color: '#44ff44', vf: '2.1V' },
+  { value: 'Blue', label: '🔵 Blue', color: '#4488ff', vf: '3.0V' },
+  { value: 'White', label: '⚪ White', color: '#ffffff', vf: '3.0V' },
+] as const;
+
 // 模擬 AI 訊息
 const aiMessages = ref([
   {
@@ -43,9 +52,28 @@ const aiMessages = ref([
 // 選取的元件
 const selectedComponent = computed(() => circuitStore.selectedComponent);
 
+// 判斷是否為 LED 元件
+const isLED = computed(() => selectedComponent.value?.type === 'led');
+
+// 取得目前 LED 顏色
+const currentLEDColor = computed(() => selectedComponent.value?.ledColor ?? '');
+
 function handleValueChange(newValue: number) {
   if (selectedComponent.value) {
     circuitStore.updateComponentProperty(selectedComponent.value.id, 'value', newValue);
+  }
+}
+
+function handleLEDColorChange(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  const color = target.value as 'Red' | 'Green' | 'Blue' | 'White' | '';
+  if (selectedComponent.value) {
+    // 如果選擇空值，則移除 ledColor 屬性；否則設定顏色
+    circuitStore.updateComponentProperty(
+      selectedComponent.value.id,
+      'ledColor',
+      color || undefined
+    );
   }
 }
 </script>
@@ -92,6 +120,23 @@ function handleValueChange(newValue: number) {
               class="prop-input"
               @input="(e) => circuitStore.updateComponentProperty(selectedComponent!.id, 'label', (e.target as HTMLInputElement).value)"
             />
+          </div>
+          <!-- LED Color Selector (僅 LED 元件顯示) -->
+          <div class="prop-item" v-if="isLED">
+            <label class="prop-label">Color</label>
+            <select
+              class="prop-select"
+              :value="currentLEDColor"
+              @change="handleLEDColorChange"
+            >
+              <option
+                v-for="opt in LED_COLOR_OPTIONS"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }} (Vf={{ opt.vf }})
+              </option>
+            </select>
           </div>
           <div class="prop-item" v-if="selectedComponent.value !== undefined">
             <label class="prop-label">Value</label>
@@ -327,6 +372,28 @@ function handleValueChange(newValue: number) {
   padding: var(--spacing-sm);
   font-size: var(--font-size-sm);
   font-family: var(--font-family-mono);
+}
+
+.prop-select {
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-mono);
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  width: 100%;
+}
+
+.prop-select:hover {
+  border-color: var(--color-text-muted);
+}
+
+.prop-select:focus {
+  outline: none;
+  border-color: var(--color-accent-blue);
+  box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.2);
 }
 
 .prop-input-group {

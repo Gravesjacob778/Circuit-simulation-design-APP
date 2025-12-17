@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateCircuitDesignRules } from '../CircuitRuleEngine';
+import { evaluateCircuitDesignRules, evaluateLED001Rule } from '../CircuitRuleEngine';
+import { I_EMIT_MIN } from '../SimulationTypes';
 import type { CircuitComponent, Wire } from '@/types/circuit';
 
 function createComponent(
@@ -165,3 +166,105 @@ describe('CircuitRuleEngine (CDRS v1)', () => {
   });
 });
 
+describe('LED-001 Post-Simulation Rule', () => {
+
+  function createLEDComponent(
+    id: string,
+    label?: string,
+    ledColor?: 'Red' | 'Green' | 'Blue' | 'White',
+    vfOverride?: number
+  ): CircuitComponent {
+    return {
+      id,
+      type: 'led',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      label,
+      ledColor,
+      vfOverride,
+      ports: [
+        { id: `${id}-p0`, name: 'anode', offsetX: 0, offsetY: -40 },
+        { id: `${id}-p1`, name: 'cathode', offsetX: 0, offsetY: 40 },
+      ],
+    };
+  }
+
+  it('LED-001: should return INFO when LED is conducting but current is below I_emit_min', () => {
+    const components = [createLEDComponent('led1', 'LED1')];
+
+    // 模擬 LED 導通，電流 0.5mA (低於 1mA 門檻)
+    const simulationResult = {
+      success: true,
+      nodeVoltages: new Map<string, number>(),
+      branchCurrents: new Map<string, number>([['led1', 0.0005]]), // 0.5mA
+    };
+
+    const violations = evaluateLED001Rule(components, simulationResult);
+
+    expect(violations.length).toBe(1);
+    expect(violations[0]!.ruleId).toBe('LED-001');
+    expect(violations[0]!.severity).toBe('INFO');
+    expect(violations[0]!.componentIds).toContain('led1');
+    expect(violations[0]!.message).toContain('below visible emission threshold');
+  });
+
+  it('LED-001: should return WARNING in teaching mode', () => {
+    const components = [createLEDComponent('led1', 'LED1')];
+
+    const simulationResult = {
+      success: true,
+      nodeVoltages: new Map<string, number>(),
+      branchCurrents: new Map<string, number>([['led1', 0.0005]]), // 0.5mA
+    };
+
+    const violations = evaluateLED001Rule(components, simulationResult, true);
+
+    expect(violations.length).toBe(1);
+    expect(violations[0]!.severity).toBe('WARNING');
+  });
+
+  it('LED-001: should not trigger when LED current is at or above I_emit_min', () => {
+    const components = [createLEDComponent('led1', 'LED1')];
+
+    // 電流正好 1mA (等於門檻)
+    const simulationResult = {
+      success: true,
+      nodeVoltages: new Map<string, number>(),
+      branchCurrents: new Map<string, number>([['led1', I_EMIT_MIN]]),
+    };
+
+    const violations = evaluateLED001Rule(components, simulationResult);
+
+    expect(violations.length).toBe(0);
+  });
+
+  it('LED-001: should not trigger when LED is not conducting (current <= 0)', () => {
+    const components = [createLEDComponent('led1', 'LED1')];
+
+    const simulationResult = {
+      success: true,
+      nodeVoltages: new Map<string, number>(),
+      branchCurrents: new Map<string, number>([['led1', 0]]),
+    };
+
+    const violations = evaluateLED001Rule(components, simulationResult);
+
+    expect(violations.length).toBe(0);
+  });
+
+  it('LED-001: should not trigger when simulation failed', () => {
+    const components = [createLEDComponent('led1', 'LED1')];
+
+    const simulationResult = {
+      success: false,
+      nodeVoltages: new Map<string, number>(),
+      branchCurrents: new Map<string, number>([['led1', 0.0005]]),
+      error: 'Simulation failed',
+    };
+
+    const violations = evaluateLED001Rule(components, simulationResult);
+
+    expect(violations.length).toBe(0);
+  });
+});
