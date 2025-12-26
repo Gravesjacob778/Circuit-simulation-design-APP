@@ -4,54 +4,121 @@
  * 整合所有 Layout 與 Workspace 元件
  */
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import AppHeader from '@/components/layout/AppHeader.vue';
 import LeftSidebar from '@/components/layout/LeftSidebar.vue';
 import RightPanel from '@/components/layout/RightPanel.vue';
 import SimulationGraph from '@/components/workspace/SimulationGraph.vue';
+import WaveformViewer from '@/components/workspace/WaveformViewer.vue';
 import CircuitCanvas from '@/components/workspace/CircuitCanvas.vue';
 import ControlBar from '@/components/workspace/ControlBar.vue';
 import { useUIStore } from '@/stores/uiStore';
+import { useWaveformStore } from '@/stores/waveformStore';
+import { useCircuitStore } from '@/stores/circuitStore';
 
 const uiStore = useUIStore();
+const waveformStore = useWaveformStore();
+const circuitStore = useCircuitStore();
 
 // 當前範例標題
 const currentExampleTitle = ref('KCL and current divider');
 
+// 是否使用新的 WaveformViewer（可切換）
+const useNewWaveformViewer = ref(true);
+
 // 計算 Grid 佈局
 const gridTemplateColumns = computed(() => {
-  // 動態計算 Grid 的列定義
-  // 如果左側關閉，第一欄不應該佔空間。
-  // 注意：grid-template-columns 的語法是 "col1 col2 col3".
-  // 如果我們用 v-if 移除 DOM 元素，grid 裡的元素數量會改變。
-  // 如果 leftSidebarOpen is false, <aside left> 不存在。 DOM 只有 Workbench 和 RightSidebar (or just Workbench).
-  // Workbench 永遠是中間那格 (index 1 if 3 cols, index 0 if 2 cols?)
-
-  // 更好做法：讓 Grid 始終定義區域，但寬度為 0？
-  // 不，如果 v-if 移除，我們應該只定義存在的列。
-
   const cols = [];
   if (uiStore.leftSidebarOpen) cols.push('var(--sidebar-left-width)');
   cols.push('1fr'); // Workbench always exists
   if (uiStore.rightSidebarOpen) cols.push('var(--sidebar-right-width)');
-
   return cols.join(' ');
 });
 
+// 預設顏色調色盤（與 waveformStore 相同）
+const COMPONENT_COLORS = [
+  '#4caf50', // 綠色
+  '#ffd740', // 黃色
+  '#42a5f5', // 藍色
+  '#ab47bc', // 紫色
+  '#ff9800', // 橙色
+  '#f44336', // 紅色
+];
+let colorIndex = 0;
+
+/**
+ * 監聽選取元件的變化
+ * 當模擬正在運行且有元件被選取時，顯示該元件的電流波形
+ */
+watch(
+  () => circuitStore.selectedComponentId,
+  (newId) => {
+    // 只有在模擬運行中才顯示波形
+    if (!circuitStore.isCurrentAnimating) {
+      return;
+    }
+
+    if (newId) {
+      const component = circuitStore.selectedComponent;
+      if (!component) return;
+
+      // 取得該元件的電流值 (mA -> A)
+      const currentMA = circuitStore.getComponentCurrent(newId);
+      if (currentMA === null) {
+        console.log(`元件 ${component.label} 沒有電流資料`);
+        return;
+      }
+
+      const currentA = currentMA / 1000; // 轉換為 A
+
+      // 取得顏色
+      const color = COMPONENT_COLORS[colorIndex++ % COMPONENT_COLORS.length];
+
+      // 顯示該元件的電流波形
+      waveformStore.showOnlyComponentWaveform({
+        componentId: newId,
+        label: `I(${component.label || component.type})`,
+        unit: 'A',
+        currentValue: currentA,
+        color,
+      });
+
+      console.log(`顯示元件 ${component.label} 的電流波形: ${currentMA.toFixed(3)} mA`);
+    } else {
+      // 取消選取時清除波形
+      waveformStore.clearAll();
+    }
+  }
+);
+
+/**
+ * 監聽模擬動畫狀態變化
+ * 當模擬停止時，清除波形
+ */
+watch(
+  () => circuitStore.isCurrentAnimating,
+  (isAnimating) => {
+    if (!isAnimating) {
+      waveformStore.clearAll();
+    }
+  }
+);
+
 function handleSelectExample(id: string) {
-  // TODO: 載入範例電路
   console.log('Selected example:', id);
   currentExampleTitle.value = id.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
 function handleNewCircuit() {
-  // TODO: 清空畫布
   console.log('New circuit');
 }
 
 function handleOpenGallery() {
-  // TODO: 開啟 Gallery
   console.log('Open gallery');
+}
+
+function handleTraceVisibilityChanged(payload: { traceId: string; visible: boolean }) {
+  waveformStore.toggleProbeVisibility(payload.traceId);
 }
 </script>
 
@@ -69,8 +136,19 @@ function handleOpenGallery() {
 
       <!-- Center: Workbench -->
       <section class="workbench">
-        <!-- Simulation View (Plotly) -->
-        <div v-if="uiStore.showSimulationGraph" class="simulation-view">
+        <!-- Waveform Viewer (New Implementation) -->
+        <div v-if="uiStore.showSimulationGraph && useNewWaveformViewer" class="simulation-view waveform-view">
+          <WaveformViewer
+            :traces="waveformStore.waveformTraces"
+            :height="350"
+            :show-legend="true"
+            :show-grid="true"
+            :show-cursor="true"
+            @trace-visibility-changed="handleTraceVisibilityChanged"
+          />
+        </div>
+        <!-- Legacy Simulation Graph (Plotly) -->
+        <div v-else-if="uiStore.showSimulationGraph" class="simulation-view">
           <SimulationGraph />
         </div>
 
@@ -145,6 +223,13 @@ function handleOpenGallery() {
   background: #000;
   position: relative;
   flex-shrink: 0;
+}
+
+/* WaveformViewer 需要更多空間來顯示統計和圖例 */
+.waveform-view {
+  height: auto;
+  min-height: 400px;
+  max-height: 550px;
 }
 
 .canvas-container {
