@@ -27,28 +27,6 @@ const LED_COLOR_OPTIONS = [
   { value: 'White', label: '⚪ White', color: '#ffffff', vf: '3.0V' },
 ] as const;
 
-// 模擬 AI 訊息
-const aiMessages = ref([
-  {
-    id: '1',
-    type: 'info',
-    content:
-      "Kirchhoff's current law (KCL) states that the sum of currents flowing into a node is equal to the sum of currents flowing out of that node. KCL is based on the principle of charge conservation. KCL for the three branches of the top node is 3 A = 2 A + 1 A.",
-  },
-  {
-    id: '2',
-    type: 'highlight',
-    content:
-      'The simplest current divider consists of two resistors connected in parallel. Note that the same voltage exists across both resistors. The input current is divided such that less current flows through the larger resistor as it exhibits stronger opposition.',
-  },
-  {
-    id: '3',
-    type: 'tip',
-    content:
-      'Adjust resistances with the knob and note changes in currents. Add more resistors in series. To add a resistor to schematic, either click the "logo" button, then click the "resistor" button. Drag and drop the new resistor to the desired location. To make a connection between two nodes, select one node, then select the other node.',
-  },
-]);
-
 // 選取的元件
 const selectedComponent = computed(() => circuitStore.selectedComponent);
 

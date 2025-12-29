@@ -211,9 +211,6 @@ function draw() {
   // 繪製 Y 軸
   drawYAxes(ctx);
 
-  // 繪製 X 軸（時間軸）
-  drawTimeAxis(ctx);
-
   // 繪製波形
   drawTraces(ctx);
 

@@ -57,8 +57,10 @@ const layout: Partial<Plotly.Layout> = {
   xaxis: {
     showgrid: true,
     gridcolor: '#333',
+    showticklabels: false,
+    ticks: '',
     tickfont: { color: '#888', size: 10 },
-    title: { text: 'Time (s)', font: { color: '#888', size: 10 } },
+    title: { text: '' },
   },
   yaxis: {
     showgrid: true,
