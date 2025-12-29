@@ -319,7 +319,7 @@ export function formatValue(value: number, unit: WaveformUnit): string {
         { factor: 1e6, symbol: 'M' },
     ];
 
-    const prefix = prefixes.find(p => absValue < p.factor * 1000) ?? prefixes[prefixes.length - 1];
+    const prefix = prefixes.find(p => absValue < p.factor * 1000) ?? prefixes[prefixes.length - 1]!;
     const scaledValue = value / prefix.factor;
 
     return `${scaledValue.toPrecision(4)} ${prefix.symbol}${unit}`;
