@@ -6,6 +6,9 @@
 
 import Konva from 'konva';
 
+// 關閉 Konva 的層數警告（本應用刻意使用 6 層以分離不同繪圖職責）
+Konva.showWarnings = false;
+
 export class KonvaStage {
     private stage: Konva.Stage | null = null;
     private gridLayer: Konva.Layer | null = null;

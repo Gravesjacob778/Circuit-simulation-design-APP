@@ -196,6 +196,12 @@ function applyStreamingTimeWindow() {
   const end = latest;
   const start = Math.max(0, end - STREAM_WINDOW_SEC);
   const divisions = timeAxis.value.divisions;
+
+  // 避免在 watch(timeAxis, ...) 中每次都指派新物件造成遞迴更新
+  if (timeAxis.value.start === start && timeAxis.value.end === end) {
+    return;
+  }
+
   timeAxis.value = {
     ...timeAxis.value,
     start,
@@ -705,14 +711,17 @@ function handleGlobalMouseMove(event: MouseEvent) {
 
 // ========== 生命週期 ==========
 
+// 追蹤元件是否已掛載（避免卸載後仍執行繪圖操作）
+let isMounted = false;
+
 function handleResize() {
-  if (containerRef.value) {
-    canvasWidth.value = containerRef.value.clientWidth;
-  }
+  if (!isMounted || !containerRef.value) return;
+  canvasWidth.value = containerRef.value.clientWidth;
   draw();
 }
 
 onMounted(() => {
+  isMounted = true;
   handleResize();
   window.addEventListener('resize', handleResize);
   window.addEventListener('mousemove', handleGlobalMouseMove);
@@ -723,6 +732,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  isMounted = false;
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('mousemove', handleGlobalMouseMove);
   window.removeEventListener('mouseup', handleMouseUp);
@@ -732,15 +742,38 @@ onUnmounted(() => {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
+  
+  // 清除排程中的繪圖
+  drawScheduled = false;
 });
 
-// 監聽變化重繪
-watch([() => props.traces, hoverTime, timeAxis, yAxes], () => {
-  if (props.streaming && followLatest.value) {
-    applyStreamingTimeWindow();
-  }
-  draw();
-}, { deep: true });
+// 使用 requestAnimationFrame 節流繪圖，避免多個響應式更新連鎖觸發導致 DOM 狀態不一致
+let drawScheduled = false;
+function scheduleDraw() {
+  if (!isMounted) return;  // 元件已卸載，不執行
+  if (drawScheduled) return;
+  drawScheduled = true;
+  requestAnimationFrame(() => {
+    if (!isMounted) {  // 再次檢查，因為 rAF 是異步的
+      drawScheduled = false;
+      return;
+    }
+    drawScheduled = false;
+    if (props.streaming && followLatest.value) {
+      applyStreamingTimeWindow();
+    }
+    draw();
+  });
+}
+
+// 監聽所有影響繪圖的響應式狀態，使用 flush: 'post' 確保 DOM 更新後再繪製
+watch(
+  () => [props.traces, props.streaming, hoverTime.value, timeAxis.value, yAxes.value] as const,
+  () => {
+    scheduleDraw();
+  },
+  { flush: 'post' }
+);
 
 // ========== 公開方法 ==========
 

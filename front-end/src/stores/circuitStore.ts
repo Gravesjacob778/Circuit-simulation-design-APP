@@ -379,6 +379,14 @@ export const useCircuitStore = defineStore('circuit', () => {
     }
 
     /**
+     * 停止模擬動畫（僅停止電流流動動畫；保留模擬結果/圖表/錯誤提示）
+     */
+    function stopSimulation(): void {
+        isCurrentAnimating.value = false;
+        isSimulating.value = false;
+    }
+
+    /**
      * 切換電流動畫並執行模擬
      */
     function toggleCurrentAnimation(): void {
@@ -392,11 +400,7 @@ export const useCircuitStore = defineStore('circuit', () => {
                 isCurrentAnimating.value = false;
             }
         } else {
-            // 清除模擬結果
-            dcResult.value = null;
-            simulationError.value = null;
-            simulationData.value = null;
-            ruleViolations.value = [];
+            stopSimulation();
         }
     }
 
@@ -540,6 +544,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         loadNetlist,
         setSimulationData,
         setSimulating,
+        stopSimulation,
         toggleCurrentAnimation,
         runSimulation,
         getComponentCurrent,

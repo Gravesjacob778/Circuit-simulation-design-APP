@@ -5,7 +5,7 @@
  */
 
 import { useCircuitStore } from '@/stores/circuitStore';
-import { Eye, Scissors, Undo2, Redo2, Scan, Zap } from 'lucide-vue-next';
+import { Eye, Scissors, Undo2, Redo2, Scan, Zap, Square } from 'lucide-vue-next';
 import { computed } from 'vue';
 
 const circuitStore = useCircuitStore();
@@ -83,6 +83,10 @@ function handleCut() {
 function handleToggleCurrentAnimation() {
   circuitStore.toggleCurrentAnimation();
 }
+
+function handleStopSimulation() {
+  circuitStore.stopSimulation();
+}
 </script>
 
 <template>
@@ -95,9 +99,14 @@ function handleToggleCurrentAnimation() {
       <button class="icon-btn" title="Cut" @click="handleCut">
         <Scissors :size="20" />
       </button>
-      <button class="icon-btn" :class="{ active: circuitStore.isCurrentAnimating }"
-        title="Toggle Current Flow Animation" @click="handleToggleCurrentAnimation">
+
+      <!-- 開始/停止模擬（電流流動動畫） -->
+      <button v-if="!circuitStore.isCurrentAnimating" class="icon-btn" title="Start Simulation"
+        @click="handleToggleCurrentAnimation">
         <Zap :size="20" />
+      </button>
+      <button v-else class="icon-btn active" title="Stop Simulation" @click="handleStopSimulation">
+        <Square :size="20" />
       </button>
     </div>
 

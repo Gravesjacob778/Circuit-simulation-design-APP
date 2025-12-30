@@ -223,8 +223,8 @@ function handleTraceVisibilityChanged(payload: { traceId: string; visible: boole
 
       <!-- Center: Workbench -->
       <section class="workbench">
-        <!-- Waveform Viewer (New Implementation) -->
-        <div v-if="uiStore.showSimulationGraph && useNewWaveformViewer" class="simulation-view waveform-view">
+        <!-- Waveform Viewer (New Implementation) - 使用 v-show 保持 DOM 穩定，避免響應式更新時的 patch 錯誤 -->
+        <div v-show="uiStore.showSimulationGraph && useNewWaveformViewer" class="simulation-view waveform-view">
           <WaveformViewer
             :traces="waveformStore.waveformTraces"
             :height="350"
@@ -236,7 +236,7 @@ function handleTraceVisibilityChanged(payload: { traceId: string; visible: boole
           />
         </div>
         <!-- Legacy Simulation Graph (Plotly) -->
-        <div v-else-if="uiStore.showSimulationGraph" class="simulation-view">
+        <div v-show="uiStore.showSimulationGraph && !useNewWaveformViewer" class="simulation-view">
           <SimulationGraph />
         </div>
 

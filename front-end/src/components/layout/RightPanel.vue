@@ -4,7 +4,7 @@
  * 對應圖片中右側的 "Circuit details" 區域
  */
 
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
 import { useCircuitStore } from '@/stores/circuitStore';
 
 const circuitStore = useCircuitStore();

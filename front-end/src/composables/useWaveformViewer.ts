@@ -16,9 +16,8 @@ import type {
     TimeAxisConfig,
     YAxisConfig,
     WaveformCursor,
-    WaveformDataPoint,
 } from '@/types/waveform';
-import { UNIT_CONFIGS, interpolateValue, calculateStats } from '@/types/waveform';
+import { interpolateValue, calculateStats } from '@/types/waveform';
 
 export interface UseWaveformViewerOptions {
     /** 預設每格時間 */
@@ -347,16 +346,21 @@ export function useWaveformViewer(
         }
     }
 
-    // ========== 監聽自動縮放 ==========
+    // ========== 監聯自動縮放 ==========
 
+    // 只在 traces 數量或 ID 改變時才重設縮放（避免每次 data append 都觸發）
+    let lastTraceIds = '';
     watch(
-        () => traces.value,
-        () => {
-            if (autoScale.value) {
-                resetZoom();
+        () => traces.value.map(t => t.traceId).join(','),
+        (newIds) => {
+            if (newIds !== lastTraceIds) {
+                lastTraceIds = newIds;
+                if (autoScale.value) {
+                    resetZoom();
+                }
             }
         },
-        { deep: true }
+        { immediate: true }
     );
 
     // 初始化時執行一次 fit
