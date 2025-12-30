@@ -56,6 +56,9 @@ let streamTimerId: number | null = null;
 let streamProbeId: string | null = null;
 let streamTimeSec = 0;
 
+// 累積模式：追蹤串流開始時間
+let accumulationStartTime = 0;
+
 function stopWaveformStreaming() {
   if (streamTimerId !== null) {
     window.clearInterval(streamTimerId);
@@ -80,18 +83,24 @@ function startWaveformStreamingForSelection() {
   const color = COMPONENT_COLORS[colorIndex++ % COMPONENT_COLORS.length];
   const currentA = currentMA / 1000;
 
-  const probe = waveformStore.startSingleComponentStream({
+  // 使用累積模式（保留歷史數據）
+  const probe = waveformStore.startAccumulationStream({
     componentId,
     label: `I(${component.label || component.type})`,
     unit: 'A',
-    initialValue: currentA,
     color,
   });
 
   streamProbeId = probe?.probeId ?? null;
   streamTimeSec = 0;
+  accumulationStartTime = performance.now() / 1000; // 記錄開始時間
 
   if (!streamProbeId) return;
+
+  // 添加初始數據點
+  waveformStore.appendProbeData(streamProbeId, [{ time: 0, value: currentA }], {
+    maxPoints: STREAM_MAX_POINTS,
+  });
 
   streamTimerId = window.setInterval(() => {
     if (!circuitStore.isCurrentAnimating) return;
@@ -102,7 +111,7 @@ function startWaveformStreamingForSelection() {
     if (latestMA === null) return;
     const latestA = latestMA / 1000;
 
-    streamTimeSec += 1 / STREAM_HZ;
+    streamTimeSec = (performance.now() / 1000) - accumulationStartTime;
 
     waveformStore.appendProbeData(streamProbeId, [{ time: streamTimeSec, value: latestA }], {
       maxPoints: STREAM_MAX_POINTS,
@@ -142,12 +151,44 @@ watch(
     if (!isAnimating) {
       // 停止時保留最後波形，只停止追加
       stopWaveformStreaming();
+      waveformStore.stopAccumulationStream();
       return;
     }
 
     // 開始時：若已有選取元件，立即開始串流（避免 stop->start 但不換選取時不更新）
     startWaveformStreamingForSelection();
   }
+);
+
+/**
+ * 監聽 DC 模擬結果變化（電壓即時更新觸發）
+ * 當電壓值變化導致重新模擬時，將新的電流值追加到波形
+ */
+watch(
+  () => circuitStore.dcResult,
+  (newResult) => {
+    // 只在動畫啟用且模擬成功時處理
+    if (!circuitStore.isCurrentAnimating) return;
+    if (!newResult?.success) return;
+    if (!streamProbeId) return;
+
+    const componentId = circuitStore.selectedComponentId;
+    if (!componentId) return;
+
+    const currentMA = circuitStore.getComponentCurrent(componentId);
+    if (currentMA === null) return;
+
+    const currentA = currentMA / 1000;
+    const elapsedSec = (performance.now() / 1000) - accumulationStartTime;
+
+    // 追加新數據點（累積模式）
+    waveformStore.appendProbeData(streamProbeId, [
+      { time: elapsedSec, value: currentA }
+    ], {
+      maxPoints: STREAM_MAX_POINTS,
+    });
+  },
+  { deep: true }
 );
 
 function handleSelectExample(id: string) {

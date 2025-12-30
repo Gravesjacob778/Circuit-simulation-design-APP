@@ -74,6 +74,9 @@ export const useWaveformStore = defineStore('waveform', () => {
 
     const DEFAULT_MAX_POINTS_PER_PROBE = 60 * 120; // ~2 minutes at 60Hz
 
+    /** 累積模式狀態（保留歷史數據而非清除） */
+    const accumulationMode = ref(false);
+
     // ========== Computed ==========
 
     /**
@@ -340,6 +343,47 @@ export const useWaveformStore = defineStore('waveform', () => {
         return probe;
     }
 
+    /**
+     * 開始累積模式串流（保留歷史數據）
+     * 與 startSingleComponentStream 不同，這個方法不會清除現有數據
+     */
+    function startAccumulationStream(config: {
+        componentId: string;
+        label: string;
+        unit: WaveformUnit;
+        color?: string;
+    }): Probe {
+        accumulationMode.value = true;
+
+        // 檢查是否已存在該元件的探針
+        const existingProbe = probes.value.find(
+            p => p.componentId === config.componentId && p.unit === config.unit
+        );
+
+        if (existingProbe) {
+            existingProbe.visible = true;
+            return existingProbe;
+        }
+
+        // 創建新探針（不清除現有數據）
+        const probe = addProbe({
+            componentId: config.componentId,
+            channelId: 'current',
+            unit: config.unit,
+            label: config.label,
+            color: config.color,
+        });
+
+        return probe;
+    }
+
+    /**
+     * 停止累積模式
+     */
+    function stopAccumulationStream(): void {
+        accumulationMode.value = false;
+    }
+
     // ========== 輔助函式 ==========
 
     function generateDefaultLabel(componentId: string, _channelId: string, unit: WaveformUnit): string {
@@ -462,6 +506,7 @@ export const useWaveformStore = defineStore('waveform', () => {
         probes,
         probeData,
         timeRange,
+        accumulationMode, // 累積模式狀態
 
         // Computed
         waveformTraces,
@@ -483,5 +528,7 @@ export const useWaveformStore = defineStore('waveform', () => {
         removeComponentWaveform,
         showOnlyComponentWaveform,
         startSingleComponentStream,
+        startAccumulationStream, // 累積模式串流
+        stopAccumulationStream,  // 停止累積模式
     };
 });

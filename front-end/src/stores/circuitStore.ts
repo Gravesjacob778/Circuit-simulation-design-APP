@@ -16,6 +16,19 @@ import type {
 import { getComponentDefinition } from '@/config/componentDefinitions';
 import { evaluateCircuitDesignRules, runDCAnalysis, type CircuitRuleViolation, type DCSimulationResult } from '@/lib/simulation';
 
+// ===== Utility Functions =====
+
+/**
+ * 防抖函數 - 用於即時更新時避免過度觸發模擬
+ */
+function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number) {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    return (...args: Parameters<T>) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn(...args), ms);
+    };
+}
+
 export const useCircuitStore = defineStore('circuit', () => {
     // ===== State =====
     const components = ref<CircuitComponent[]>([]);
@@ -29,6 +42,12 @@ export const useCircuitStore = defineStore('circuit', () => {
     const dcResult = ref<DCSimulationResult | null>(null); // DC 模擬結果
     const simulationError = ref<string | null>(null); // 模擬錯誤訊息
     const ruleViolations = ref<CircuitRuleViolation[]>([]); // CDRS v1 規則檢查結果
+
+    // 追蹤電壓變化事件（用於波形累積模式）
+    const lastValueChange = ref<{
+        componentId: string;
+        timestamp: number;
+    } | null>(null);
 
     // Undo/Redo History
     // 使用 JSON 字串儲存快照，避免物件參考問題
@@ -204,6 +223,16 @@ export const useCircuitStore = defineStore('circuit', () => {
     }
 
     /**
+     * 防抖模擬觸發器 - 當電壓值變化時自動重新模擬
+     * 使用 150ms 防抖避免快速輸入時過度計算
+     */
+    const triggerDebouncedSimulation = debounce(() => {
+        if (isCurrentAnimating.value) {
+            runSimulation();
+        }
+    }, 150);
+
+    /**
      * 更新元件屬性
      */
     function updateComponentProperty(
@@ -215,6 +244,15 @@ export const useCircuitStore = defineStore('circuit', () => {
         if (component) {
             (component as Record<string, unknown>)[property] = value;
             saveState(); // 記錄操作
+
+            // 當電壓/電流值變化且動畫啟用時，自動重新模擬
+            if (property === 'value' && isCurrentAnimating.value) {
+                lastValueChange.value = {
+                    componentId,
+                    timestamp: Date.now(),
+                };
+                triggerDebouncedSimulation();
+            }
         }
     }
 
@@ -483,6 +521,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         ruleViolations,
         canUndo,
         canRedo,
+        lastValueChange, // 電壓變化追蹤（用於波形累積模式）
         // Getters
         netlist,
         selectedComponent,
