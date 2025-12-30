@@ -72,6 +72,8 @@ export const useWaveformStore = defineStore('waveform', () => {
     /** 顏色計數器（用於自動分配顏色） */
     let colorIndex = 0;
 
+    const DEFAULT_MAX_POINTS_PER_PROBE = 60 * 120; // ~2 minutes at 60Hz
+
     // ========== Computed ==========
 
     /**
@@ -172,6 +174,7 @@ export const useWaveformStore = defineStore('waveform', () => {
      */
     function updateProbeData(probeId: string, data: WaveformDataPoint[]): void {
         probeData.value.set(probeId, data);
+        updateTimeRangeFromData();
     }
 
     /**
@@ -181,6 +184,34 @@ export const useWaveformStore = defineStore('waveform', () => {
         updates.forEach((data, probeId) => {
             probeData.value.set(probeId, data);
         });
+
+        updateTimeRangeFromData();
+    }
+
+    /**
+     * 追加探針資料（支援串流更新）
+     */
+    function appendProbeData(
+        probeId: string,
+        points: WaveformDataPoint[],
+        options?: {
+            /**
+             * 每個 probe 允許保留的最大點數（超過會從舊資料裁切）
+             */
+            maxPoints?: number;
+        }
+    ): void {
+        if (points.length === 0) return;
+
+        const existing = probeData.value.get(probeId) ?? [];
+        const combined = existing.concat(points);
+
+        const maxPoints = options?.maxPoints ?? DEFAULT_MAX_POINTS_PER_PROBE;
+        const trimmed =
+            combined.length > maxPoints ? combined.slice(combined.length - maxPoints) : combined;
+
+        probeData.value.set(probeId, trimmed);
+        updateTimeRangeFromData();
     }
 
     /**
@@ -221,16 +252,7 @@ export const useWaveformStore = defineStore('waveform', () => {
         }
 
         // 更新時間範圍
-        if (timePoints.length > 0) {
-            const firstTime = timePoints[0];
-            const lastTime = timePoints[timePoints.length - 1];
-            if (firstTime !== undefined && lastTime !== undefined) {
-                timeRange.value = {
-                    start: firstTime,
-                    end: lastTime,
-                };
-            }
-        }
+        updateTimeRangeFromData();
     }
 
     /**
@@ -292,6 +314,30 @@ export const useWaveformStore = defineStore('waveform', () => {
         probeData.value = new Map();
         colorIndex = 0;
         timeRange.value = { start: 0, end: 1 };
+    }
+
+    /**
+     * 以「單一元件單一 trace」模式開始串流波形（會清除其他波形）
+     */
+    function startSingleComponentStream(config: {
+        componentId: string;
+        label: string;
+        unit: WaveformUnit;
+        initialValue: number;
+        color?: string;
+    }): Probe {
+        clearAll();
+
+        const probe = addProbe({
+            componentId: config.componentId,
+            channelId: 'current',
+            unit: config.unit,
+            label: config.label,
+            color: config.color,
+        });
+
+        updateProbeData(probe.probeId, [{ time: 0, value: config.initialValue }]);
+        return probe;
     }
 
     // ========== 輔助函式 ==========
@@ -390,6 +436,27 @@ export const useWaveformStore = defineStore('waveform', () => {
         return addComponentWaveform(config);
     }
 
+    function updateTimeRangeFromData(): void {
+        let minTime = Infinity;
+        let maxTime = -Infinity;
+
+        for (const data of probeData.value.values()) {
+            if (data.length === 0) continue;
+            const first = data[0];
+            const last = data[data.length - 1];
+            if (!first || !last) continue;
+            if (first.time < minTime) minTime = first.time;
+            if (last.time > maxTime) maxTime = last.time;
+        }
+
+        if (minTime === Infinity || maxTime === -Infinity) {
+            timeRange.value = { start: 0, end: 1 };
+            return;
+        }
+
+        timeRange.value = { start: minTime, end: maxTime };
+    }
+
     return {
         // State
         probes,
@@ -407,6 +474,7 @@ export const useWaveformStore = defineStore('waveform', () => {
         toggleProbeVisibility,
         updateProbeColor,
         updateProbeData,
+        appendProbeData,
         batchUpdateData,
         loadFromSimulation,
         loadDemoData,
@@ -414,5 +482,6 @@ export const useWaveformStore = defineStore('waveform', () => {
         addComponentWaveform,
         removeComponentWaveform,
         showOnlyComponentWaveform,
+        startSingleComponentStream,
     };
 });

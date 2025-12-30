@@ -58,6 +58,13 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  /**
+   * 串流模式：資料會持續追加，時間軸以固定視窗尾隨最新時間
+   */
+  streaming: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits<{
@@ -129,8 +136,21 @@ function startAnimation() {
 // 保持 traces ref 與 props 同步，並在數據變化時觸發動畫
 watch(() => props.traces, (newTraces) => {
   const newFingerprint = getTraceFingerprint(newTraces);
-  
-  // 只有當數據真正變化時才觸發動畫
+
+  // 串流模式：避免每次 append 都觸發 800ms 掃描動畫
+  if (props.streaming) {
+    lastTraceFingerprint = newFingerprint;
+    tracesRef.value = newTraces;
+    animationProgress.value = 1;
+    isAnimating.value = false;
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    return;
+  }
+
+  // 非串流：資料真正變化時才觸發掃描動畫
   if (newFingerprint !== lastTraceFingerprint && newTraces.length > 0) {
     lastTraceFingerprint = newFingerprint;
     tracesRef.value = newTraces;
@@ -144,6 +164,7 @@ watch(() => props.traces, (newTraces) => {
 
 const {
   timeAxis,
+  autoScale,
   hoverTime,
   visibleTraces,
   yAxes,
@@ -152,6 +173,50 @@ const {
   resetZoom,
   setHoverTime,
 } = useWaveformViewer(tracesRef);
+
+// ========== Streaming viewport behavior ==========
+
+const STREAM_WINDOW_SEC = 10;
+const followLatest = ref(true);
+
+function getLatestTimeSec(traces: WaveformTrace[]): number | null {
+  let latest = -Infinity;
+  for (const t of traces) {
+    const last = t.data[t.data.length - 1];
+    if (!last) continue;
+    if (last.time > latest) latest = last.time;
+  }
+  return latest === -Infinity ? null : latest;
+}
+
+function applyStreamingTimeWindow() {
+  const latest = getLatestTimeSec(visibleTraces.value);
+  if (latest === null) return;
+
+  const end = latest;
+  const start = Math.max(0, end - STREAM_WINDOW_SEC);
+  const divisions = timeAxis.value.divisions;
+  timeAxis.value = {
+    ...timeAxis.value,
+    start,
+    end,
+    timePerDivision: (end - start) / divisions,
+  };
+
+}
+
+watch(
+  () => props.streaming,
+  (streaming) => {
+    if (streaming) {
+      // 串流時由 viewer 控制時間視窗；避免 composable auto fit 一直擴張
+      autoScale.value = false;
+      followLatest.value = true;
+      applyStreamingTimeWindow();
+    }
+  },
+  { immediate: true }
+);
 
 // ========== 尺寸計算 ==========
 
@@ -185,6 +250,28 @@ function xToTime(x: number): number {
 function valueToY(value: number, axis: YAxisConfig): number {
   const ratio = (value - axis.min) / (axis.max - axis.min);
   return plotArea.value.y + plotArea.value.height * (1 - ratio);
+}
+
+function lowerBoundByTime(data: { time: number }[], time: number): number {
+  let lo = 0;
+  let hi = data.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((data[mid]?.time ?? -Infinity) < time) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function upperBoundByTime(data: { time: number }[], time: number): number {
+  let lo = 0;
+  let hi = data.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((data[mid]?.time ?? Infinity) <= time) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 // ========== 繪製函式 ==========
@@ -321,39 +408,6 @@ function drawYAxes(ctx: CanvasRenderingContext2D) {
   });
 }
 
-function drawTimeAxis(ctx: CanvasRenderingContext2D) {
-  const { x, width, height } = plotArea.value;
-  const y = plotArea.value.y + height;
-  const { start, end, divisions } = timeAxis.value;
-
-  ctx.font = '10px JetBrains Mono, monospace';
-  ctx.fillStyle = '#888';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-
-  for (let i = 0; i <= divisions; i++) {
-    const ratio = i / divisions;
-    const time = start + ratio * (end - start);
-    const xPos = x + width * ratio;
-
-    // 刻度線
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(xPos, y);
-    ctx.lineTo(xPos, y + 5);
-    ctx.stroke();
-
-    // 時間標籤
-    ctx.fillText(formatTimeLabel(time), xPos, y + 8);
-  }
-
-  // 軸標籤
-  ctx.fillStyle = '#666';
-  ctx.font = '11px Inter, sans-serif';
-  ctx.fillText('Time', x + width / 2, y + 25);
-}
-
 function drawTraces(ctx: CanvasRenderingContext2D) {
   const { x, width } = plotArea.value;
   const progress = animationProgress.value;
@@ -373,9 +427,17 @@ function drawTraces(ctx: CanvasRenderingContext2D) {
 
     // 計算當前動畫應該繪製到的點數
     const totalPoints = trace.data.length;
-    const visiblePoints = Math.ceil(totalPoints * progress);
+    const revealedPoints = Math.ceil(totalPoints * progress);
 
-    if (visiblePoints === 0) {
+    // 找出在目前時間軸可視範圍內的索引區間
+    const startTime = timeAxis.value.start;
+    const endTime = timeAxis.value.end;
+
+    const startIndex = lowerBoundByTime(trace.data, startTime);
+    const endIndexByTime = upperBoundByTime(trace.data, endTime);
+    const endIndex = Math.min(endIndexByTime, revealedPoints);
+
+    if (endIndex <= startIndex) {
       ctx.restore();
       continue;
     }
@@ -392,7 +454,7 @@ function drawTraces(ctx: CanvasRenderingContext2D) {
       ctx.beginPath();
       let started = false;
 
-      for (let i = 0; i < visiblePoints; i++) {
+      for (let i = startIndex; i < endIndex; i++) {
         const point = trace.data[i];
         if (!point) continue;
         
@@ -421,7 +483,7 @@ function drawTraces(ctx: CanvasRenderingContext2D) {
     ctx.beginPath();
     let started = false;
 
-    for (let i = 0; i < visiblePoints; i++) {
+    for (let i = startIndex; i < endIndex; i++) {
       const point = trace.data[i];
       if (!point) continue;
       
@@ -439,8 +501,8 @@ function drawTraces(ctx: CanvasRenderingContext2D) {
     ctx.stroke();
 
     // 繪製掃描線尖端發光效果
-    if (isAnimating.value && progress < 1 && visiblePoints > 0) {
-      const lastPoint = trace.data[visiblePoints - 1];
+    if (isAnimating.value && progress < 1 && endIndex > startIndex) {
+      const lastPoint = trace.data[endIndex - 1];
       if (lastPoint) {
         const px = timeToX(lastPoint.time);
         const py = valueToY(lastPoint.value, axis);
@@ -589,6 +651,9 @@ function handleWheel(event: WheelEvent) {
 
   // 縮放因子
   const zoomFactor = event.deltaY > 0 ? 0.8 : 1.25;
+  if (props.streaming) {
+    followLatest.value = false;
+  }
   zoomTime(zoomFactor, centerTime);
 }
 
@@ -602,6 +667,9 @@ function handleMouseDown(event: MouseEvent) {
     panStartX = event.clientX;
     panStartTime = timeAxis.value.start;
     
+    if (props.streaming) {
+      followLatest.value = false;
+    }
     if (canvasRef.value) {
       canvasRef.value.style.cursor = 'grabbing';
     }
@@ -668,15 +736,31 @@ onUnmounted(() => {
 
 // 監聽變化重繪
 watch([() => props.traces, hoverTime, timeAxis, yAxes], () => {
+  if (props.streaming && followLatest.value) {
+    applyStreamingTimeWindow();
+  }
   draw();
 }, { deep: true });
 
 // ========== 公開方法 ==========
 
 defineExpose({
-  resetZoom,
-  zoomIn: () => zoomTime(1.5),
-  zoomOut: () => zoomTime(0.67),
+  resetZoom: () => {
+    if (props.streaming) {
+      followLatest.value = true;
+      applyStreamingTimeWindow();
+      return;
+    }
+    resetZoom();
+  },
+  zoomIn: () => {
+    if (props.streaming) followLatest.value = false;
+    zoomTime(1.5);
+  },
+  zoomOut: () => {
+    if (props.streaming) followLatest.value = false;
+    zoomTime(0.67);
+  },
 });
 </script>
 

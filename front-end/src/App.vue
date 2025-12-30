@@ -46,6 +46,70 @@ const COMPONENT_COLORS = [
 ];
 let colorIndex = 0;
 
+// ========== Waveform streaming (current animation) ==========
+
+const STREAM_HZ = 60;
+const STREAM_INTERVAL_MS = Math.round(1000 / STREAM_HZ);
+const STREAM_MAX_POINTS = STREAM_HZ * 120; // keep ~2 minutes
+
+let streamTimerId: number | null = null;
+let streamProbeId: string | null = null;
+let streamTimeSec = 0;
+
+function stopWaveformStreaming() {
+  if (streamTimerId !== null) {
+    window.clearInterval(streamTimerId);
+    streamTimerId = null;
+  }
+  streamProbeId = null;
+}
+
+function startWaveformStreamingForSelection() {
+  stopWaveformStreaming();
+
+  if (!circuitStore.isCurrentAnimating) return;
+  const componentId = circuitStore.selectedComponentId;
+  if (!componentId) return;
+
+  const component = circuitStore.selectedComponent;
+  if (!component) return;
+
+  const currentMA = circuitStore.getComponentCurrent(componentId);
+  if (currentMA === null) return;
+
+  const color = COMPONENT_COLORS[colorIndex++ % COMPONENT_COLORS.length];
+  const currentA = currentMA / 1000;
+
+  const probe = waveformStore.startSingleComponentStream({
+    componentId,
+    label: `I(${component.label || component.type})`,
+    unit: 'A',
+    initialValue: currentA,
+    color,
+  });
+
+  streamProbeId = probe?.probeId ?? null;
+  streamTimeSec = 0;
+
+  if (!streamProbeId) return;
+
+  streamTimerId = window.setInterval(() => {
+    if (!circuitStore.isCurrentAnimating) return;
+    if (!streamProbeId) return;
+    if (circuitStore.selectedComponentId !== componentId) return;
+
+    const latestMA = circuitStore.getComponentCurrent(componentId);
+    if (latestMA === null) return;
+    const latestA = latestMA / 1000;
+
+    streamTimeSec += 1 / STREAM_HZ;
+
+    waveformStore.appendProbeData(streamProbeId, [{ time: streamTimeSec, value: latestA }], {
+      maxPoints: STREAM_MAX_POINTS,
+    });
+  }, STREAM_INTERVAL_MS);
+}
+
 /**
  * 監聽選取元件的變化
  * 當模擬正在運行且有元件被選取時，顯示該元件的電流波形
@@ -59,33 +123,10 @@ watch(
     }
 
     if (newId) {
-      const component = circuitStore.selectedComponent;
-      if (!component) return;
-
-      // 取得該元件的電流值 (mA -> A)
-      const currentMA = circuitStore.getComponentCurrent(newId);
-      if (currentMA === null) {
-        console.log(`元件 ${component.label} 沒有電流資料`);
-        return;
-      }
-
-      const currentA = currentMA / 1000; // 轉換為 A
-
-      // 取得顏色
-      const color = COMPONENT_COLORS[colorIndex++ % COMPONENT_COLORS.length];
-
-      // 顯示該元件的電流波形
-      waveformStore.showOnlyComponentWaveform({
-        componentId: newId,
-        label: `I(${component.label || component.type})`,
-        unit: 'A',
-        currentValue: currentA,
-        color,
-      });
-
-      console.log(`顯示元件 ${component.label} 的電流波形: ${currentMA.toFixed(3)} mA`);
+      startWaveformStreamingForSelection();
     } else {
       // 取消選取時清除波形
+      stopWaveformStreaming();
       waveformStore.clearAll();
     }
   }
@@ -99,8 +140,13 @@ watch(
   () => circuitStore.isCurrentAnimating,
   (isAnimating) => {
     if (!isAnimating) {
-      waveformStore.clearAll();
+      // 停止時保留最後波形，只停止追加
+      stopWaveformStreaming();
+      return;
     }
+
+    // 開始時：若已有選取元件，立即開始串流（避免 stop->start 但不換選取時不更新）
+    startWaveformStreamingForSelection();
   }
 );
 
@@ -144,6 +190,7 @@ function handleTraceVisibilityChanged(payload: { traceId: string; visible: boole
             :show-legend="true"
             :show-grid="true"
             :show-cursor="true"
+            :streaming="circuitStore.isCurrentAnimating"
             @trace-visibility-changed="handleTraceVisibilityChanged"
           />
         </div>
