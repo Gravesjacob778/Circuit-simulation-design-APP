@@ -5,8 +5,9 @@
  */
 
 import { useCircuitStore } from '@/stores/circuitStore';
-import { Eye, Scissors, Undo2, Redo2, Scan, Zap, Square } from 'lucide-vue-next';
+import { Eye, Scissors, Undo2, Redo2, Scan, Zap, Square, Activity, Radio } from 'lucide-vue-next';
 import { computed } from 'vue';
+import type { AnalysisMode } from '@/types/frequencyAnalysis';
 
 const circuitStore = useCircuitStore();
 
@@ -87,6 +88,10 @@ function handleToggleCurrentAnimation() {
 function handleStopSimulation() {
   circuitStore.stopSimulation();
 }
+
+function handleSetAnalysisMode(mode: AnalysisMode) {
+  circuitStore.setAnalysisMode(mode);
+}
 </script>
 
 <template>
@@ -108,6 +113,30 @@ function handleStopSimulation() {
       <button v-else class="icon-btn active" title="Stop Simulation" @click="handleStopSimulation">
         <Square :size="20" />
       </button>
+
+      <div class="separator" />
+
+      <!-- 分析模式切換 -->
+      <div class="mode-toggle">
+        <button
+          class="mode-btn"
+          :class="{ active: circuitStore.analysisMode === 'time' }"
+          title="時域分析"
+          @click="handleSetAnalysisMode('time')"
+        >
+          <Activity :size="16" />
+          <span>時域</span>
+        </button>
+        <button
+          class="mode-btn"
+          :class="{ active: circuitStore.analysisMode === 'frequency' }"
+          title="頻域分析"
+          @click="handleSetAnalysisMode('frequency')"
+        >
+          <Radio :size="16" />
+          <span>頻域</span>
+        </button>
+      </div>
     </div>
 
     <!-- 中間狀態 / 錯誤提示 -->
@@ -226,5 +255,48 @@ function handleStopSimulation() {
 .icon-btn.active:hover {
   background-color: rgba(255, 204, 0, 0.25);
   color: #ffeb3b;
+}
+
+.separator {
+  width: 1px;
+  height: 24px;
+  background-color: #444;
+  margin: 0 4px;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background-color: #333;
+  border-radius: var(--radius-sm);
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn:hover {
+  color: #ccc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode-btn.active {
+  background: #6366f1;
+  color: white;
+}
+
+.mode-btn.active:hover {
+  background: #4f46e5;
 }
 </style>

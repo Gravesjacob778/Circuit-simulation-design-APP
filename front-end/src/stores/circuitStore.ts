@@ -18,11 +18,15 @@ import {
     evaluateCircuitDesignRules,
     runDCAnalysis,
     runTransientAnalysis,
+    runACSweepAnalysis,
     type CircuitRuleViolation,
     type DCSimulationResult,
     type TransientSimulationResult,
     type TransientOptions,
+    type ACSweepResult,
+    type ACSweepOptions,
 } from '@/lib/simulation';
+import type { AnalysisMode } from '@/types/frequencyAnalysis';
 
 // ===== Utility Functions =====
 
@@ -49,8 +53,16 @@ export const useCircuitStore = defineStore('circuit', () => {
     const isCurrentAnimating = ref(false); // 電流流動動畫狀態
     const dcResult = ref<DCSimulationResult | null>(null); // DC 模擬結果
     const transientResult = ref<TransientSimulationResult | null>(null); // 瞬態模擬結果
+    const acSweepResult = ref<ACSweepResult | null>(null); // AC 掃頻結果
     const simulationError = ref<string | null>(null); // 模擬錯誤訊息
     const ruleViolations = ref<CircuitRuleViolation[]>([]); // CDRS v1 規則檢查結果
+    const analysisMode = ref<AnalysisMode>('time'); // 分析模式：時域 or 頻域
+    const acSweepOptions = ref<Partial<ACSweepOptions>>({
+        startFrequency: 1,
+        endFrequency: 1e6,
+        pointsPerDecade: 10,
+        sweepType: 'logarithmic',
+    });
 
     // 追蹤電壓變化事件（用於波形累積模式）
     const lastValueChange = ref<{
@@ -624,6 +636,60 @@ export const useCircuitStore = defineStore('circuit', () => {
         return null;
     }
 
+    /**
+     * 執行 AC 掃頻分析
+     * @param options 可選的掃頻選項
+     * @returns 是否成功
+     */
+    function runACSweep(options?: Partial<ACSweepOptions>): boolean {
+        isSimulating.value = true;
+        simulationError.value = null;
+        ruleViolations.value = evaluateCircuitDesignRules(components.value, wires.value);
+
+        const blockingErrors = ruleViolations.value.filter((v) => v.severity === 'ERROR');
+        if (blockingErrors.length > 0) {
+            acSweepResult.value = null;
+            simulationError.value = blockingErrors[0]?.message ?? 'Circuit rule violation (ERROR)';
+            isSimulating.value = false;
+            return false;
+        }
+
+        try {
+            const sweepOpts = { ...acSweepOptions.value, ...options };
+            const result = runACSweepAnalysis(components.value, wires.value, sweepOpts);
+            acSweepResult.value = result;
+
+            if (result.success) {
+                console.log('AC 掃頻分析成功', result);
+                return true;
+            } else {
+                simulationError.value = result.error || '未知錯誤';
+                console.warn('AC 掃頻分析失敗:', result.error);
+                return false;
+            }
+        } catch (error) {
+            simulationError.value = error instanceof Error ? error.message : '模擬執行錯誤';
+            console.error('AC 掃頻分析錯誤:', error);
+            return false;
+        } finally {
+            isSimulating.value = false;
+        }
+    }
+
+    /**
+     * 設定分析模式
+     */
+    function setAnalysisMode(mode: AnalysisMode) {
+        analysisMode.value = mode;
+    }
+
+    /**
+     * 更新 AC 掃頻選項
+     */
+    function updateACSweepOptions(options: Partial<ACSweepOptions>) {
+        acSweepOptions.value = { ...acSweepOptions.value, ...options };
+    }
+
     // 初始化第一筆紀錄
     initState();
 
@@ -639,8 +705,11 @@ export const useCircuitStore = defineStore('circuit', () => {
         isCurrentAnimating,
         dcResult,
         transientResult,
+        acSweepResult,
         simulationError,
         ruleViolations,
+        analysisMode,
+        acSweepOptions,
         canUndo,
         canRedo,
         lastValueChange, // 電壓變化追蹤（用於波形累積模式）
@@ -666,6 +735,9 @@ export const useCircuitStore = defineStore('circuit', () => {
         toggleCurrentAnimation,
         runSimulation,
         runTransientSimulation,
+        runACSweep,
+        setAnalysisMode,
+        updateACSweepOptions,
         getComponentCurrent,
         getComponentVoltage,
         undo,

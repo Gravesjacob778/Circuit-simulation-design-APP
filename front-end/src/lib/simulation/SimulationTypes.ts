@@ -143,3 +143,137 @@ export interface TransientSimulationResult {
   /** 模擬選項 (用於記錄) */
   options: TransientOptions;
 }
+
+// ========== AC 掃頻分析類型定義 ==========
+
+import type { Complex } from './Complex';
+
+/**
+ * AC 掃頻分析選項
+ */
+export interface ACSweepOptions {
+  /** 起始頻率 (Hz) */
+  startFrequency: number;
+  /** 終止頻率 (Hz) */
+  endFrequency: number;
+  /** 每十倍頻的點數 (對數掃頻) 或總點數 (線性掃頻) */
+  pointsPerDecade: number;
+  /** 掃頻類型 */
+  sweepType: 'logarithmic' | 'linear';
+}
+
+/**
+ * 預設 AC 掃頻選項
+ */
+export const DEFAULT_AC_SWEEP_OPTIONS: ACSweepOptions = {
+  startFrequency: 1,        // 1 Hz
+  endFrequency: 1e6,        // 1 MHz
+  pointsPerDecade: 10,
+  sweepType: 'logarithmic',
+};
+
+/**
+ * AC 相量（複數表示的電壓或電流）
+ */
+export interface ACPhasor {
+  /** 峰值大小 */
+  magnitude: number;
+  /** 相位角（弧度） */
+  phase: number;
+  /** 相位角（度） */
+  phaseDegrees: number;
+  /** 完整複數表示 */
+  complex: Complex;
+  /** RMS 值 (magnitude / sqrt(2)) */
+  rms: number;
+}
+
+/**
+ * 單一頻率點的分析結果
+ */
+export interface ACFrequencyPoint {
+  /** 頻率 (Hz) */
+  frequency: number;
+  /** 角頻率 ω = 2πf */
+  omega: number;
+  /** 節點電壓相量 (節點ID → 電壓相量) */
+  nodeVoltages: Map<string, ACPhasor>;
+  /** 支路電流相量 (元件ID → 電流相量) */
+  branchCurrents: Map<string, ACPhasor>;
+  /** 元件阻抗 (元件ID → 阻抗相量) */
+  componentImpedances: Map<string, ACPhasor>;
+}
+
+/**
+ * 轉移函數數據（用於 Bode 圖）
+ */
+export interface TransferFunction {
+  /** 輸入節點 ID */
+  inputNodeId: string;
+  /** 輸出節點 ID */
+  outputNodeId: string;
+  /** 頻率陣列 (Hz) */
+  frequencies: number[];
+  /** 增益陣列 (dB) */
+  gainDB: number[];
+  /** 相位陣列 (度) */
+  phaseDegrees: number[];
+  /** 線性增益陣列 (V/V) */
+  gainLinear: number[];
+}
+
+/**
+ * 阻抗數據（用於阻抗圖）
+ */
+export interface ImpedanceData {
+  /** 元件 ID */
+  componentId: string;
+  /** 元件標籤 */
+  label: string;
+  /** 頻率陣列 (Hz) */
+  frequencies: number[];
+  /** 阻抗大小陣列 (Ω) */
+  magnitudeOhms: number[];
+  /** 阻抗相位陣列 (度) */
+  phaseDegrees: number[];
+}
+
+/**
+ * 共振點資訊
+ */
+export interface ResonanceInfo {
+  /** 共振頻率 (Hz) */
+  frequency: number;
+  /** 共振類型 */
+  type: 'series' | 'parallel';
+  /** Q 值 (品質因數) */
+  qFactor: number;
+  /** 頻寬 (Hz) */
+  bandwidth: number;
+  /** 下截止頻率 (Hz) */
+  lowerCutoff: number;
+  /** 上截止頻率 (Hz) */
+  upperCutoff: number;
+}
+
+/**
+ * AC 掃頻分析完整結果
+ */
+export interface ACSweepResult {
+  /** 各頻率點的完整數據 */
+  frequencyPoints: ACFrequencyPoint[];
+  /** 頻率陣列 (Hz) - 便於快速存取 */
+  frequencies: number[];
+  /** 轉移函數（若有定義輸入/輸出節點） */
+  transferFunction?: TransferFunction;
+  /** 各元件的阻抗數據 */
+  impedanceData: ImpedanceData[];
+  /** 共振點資訊 */
+  resonances: ResonanceInfo[];
+  /** 是否成功 */
+  success: boolean;
+  /** 錯誤訊息 */
+  error?: string;
+  /** 分析選項（用於記錄） */
+  options: ACSweepOptions;
+}
