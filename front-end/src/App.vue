@@ -11,19 +11,45 @@ import RightPanel from '@/components/layout/RightPanel.vue';
 import WaveformViewer from '@/components/workspace/WaveformViewer.vue';
 import CircuitCanvas from '@/components/workspace/CircuitCanvas.vue';
 import ControlBar from '@/components/workspace/ControlBar.vue';
+import StreamingControlBar from '@/components/workspace/StreamingControlBar.vue';
 import { useUIStore } from '@/stores/uiStore';
 import { useWaveformStore } from '@/stores/waveformStore';
 import { useCircuitStore } from '@/stores/circuitStore';
+import { useStreamingSimulation, autoTimeScale, type ProbeConfig } from '@/composables/useStreamingSimulation';
 
 const uiStore = useUIStore();
 const waveformStore = useWaveformStore();
 const circuitStore = useCircuitStore();
+
+// 串流模擬控制
+const streamingSimulation = useStreamingSimulation();
 
 // 當前範例標題
 const currentExampleTitle = ref('KCL and current divider');
 
 // 是否使用新的 WaveformViewer（可切換）
 const useNewWaveformViewer = ref(true);
+
+// 檢查電路是否包含電源（AC 或 DC）
+const hasPowerSource = computed(() => {
+  return circuitStore.components.some(c => c.type === 'ac_source' || c.type === 'dc_source');
+});
+
+// 檢查電路是否包含 AC 電源
+const hasACSource = computed(() => {
+  return circuitStore.components.some(c => c.type === 'ac_source');
+});
+
+// 取得 AC 電源的頻率（用於自動時間縮放）
+const acSourceFrequency = computed(() => {
+  const acSource = circuitStore.components.find(c => c.type === 'ac_source');
+  return acSource?.frequency ?? 60;
+});
+
+// 是否使用串流模擬模式（有電源時啟用）
+const useStreamingMode = computed(() => {
+  return hasPowerSource.value && streamingSimulation.isActive.value;
+});
 
 // 計算 Grid 佈局
 const gridTemplateColumns = computed(() => {
@@ -43,177 +69,196 @@ const COMPONENT_COLORS = [
   '#ff9800', // 橙色
   '#f44336', // 紅色
 ];
-let colorIndex = 0;
 
-// ========== Waveform streaming (current animation) ==========
+// ========== 串流模擬控制 (即時動畫) ==========
 
-const STREAM_HZ = 60;
-const STREAM_INTERVAL_MS = Math.round(1000 / STREAM_HZ);
-const STREAM_MAX_POINTS = STREAM_HZ * 120; // keep ~2 minutes
-
-let streamTimerId: number | null = null;
-let streamProbeId: string | null = null;
-let streamTimeSec = 0;
-
-// 累積模式：追蹤串流開始時間
-let accumulationStartTime = 0;
-
-function stopWaveformStreaming() {
-  if (streamTimerId !== null) {
-    window.clearInterval(streamTimerId);
-    streamTimerId = null;
-  }
-  streamProbeId = null;
-}
-
-function startWaveformStreamingForSelection() {
-  stopWaveformStreaming();
-
-  if (!circuitStore.isCurrentAnimating) return;
-  const componentId = circuitStore.selectedComponentId;
-  if (!componentId) return;
-
-  const component = circuitStore.selectedComponent;
-  if (!component) return;
-
-  const currentMA = circuitStore.getComponentCurrent(componentId);
-  if (currentMA === null) return;
-
-  const color = COMPONENT_COLORS[colorIndex++ % COMPONENT_COLORS.length];
-  const currentA = currentMA / 1000;
-
-  // 使用累積模式（保留歷史數據）
-  const probe = waveformStore.startAccumulationStream({
-    componentId,
-    label: `I(${component.label || component.type})`,
-    unit: 'A',
-    color,
-  });
-
-  streamProbeId = probe?.probeId ?? null;
-  streamTimeSec = 0;
-  accumulationStartTime = performance.now() / 1000; // 記錄開始時間
-
-  if (!streamProbeId) return;
-
-  // 添加初始數據點
-  waveformStore.appendProbeData(streamProbeId, [{ time: 0, value: currentA }], {
-    maxPoints: STREAM_MAX_POINTS,
-  });
-
-  streamTimerId = window.setInterval(() => {
-    if (!circuitStore.isCurrentAnimating) return;
-    if (!streamProbeId) return;
-    if (circuitStore.selectedComponentId !== componentId) return;
-
-    const latestMA = circuitStore.getComponentCurrent(componentId);
-    if (latestMA === null) return;
-    const latestA = latestMA / 1000;
-
-    streamTimeSec = (performance.now() / 1000) - accumulationStartTime;
-
-    waveformStore.appendProbeData(streamProbeId, [{ time: streamTimeSec, value: latestA }], {
-      maxPoints: STREAM_MAX_POINTS,
-    });
-  }, STREAM_INTERVAL_MS);
-}
+/** DC 模式的預設時間縮放（1:1 即時） */
+const DC_DEFAULT_TIME_SCALE = 1;
 
 /**
- * 監聽選取元件的變化
- * 當模擬正在運行且有元件被選取時，顯示該元件的電流波形
+ * 啟動串流模擬（支援 AC 和 DC）
  */
-watch(
-  () => circuitStore.selectedComponentId,
-  (newId) => {
-    // 只有在模擬運行中才顯示波形
-    if (!circuitStore.isCurrentAnimating) {
-      return;
-    }
+function startStreamingSimulation() {
+  if (!hasPowerSource.value) return;
 
-    if (newId) {
-      startWaveformStreamingForSelection();
-    } else {
-      // 取消選取時清除波形
-      stopWaveformStreaming();
-      waveformStore.clearAll();
+  // 建立探針配置
+  const probes: ProbeConfig[] = [];
+
+  // 為所有電阻、電感、電容建立電流探針
+  for (const component of circuitStore.components) {
+    if (['resistor', 'capacitor', 'inductor', 'led', 'diode'].includes(component.type)) {
+      probes.push({
+        componentId: component.id,
+        label: `I(${component.label || component.type})`,
+        unit: 'A',
+        measureType: 'current',
+        color: COMPONENT_COLORS[probes.length % COMPONENT_COLORS.length],
+      });
     }
   }
-);
+
+  // 如果沒有可測量的元件，測量電源
+  if (probes.length === 0) {
+    const powerSource = circuitStore.components.find(c => c.type === 'ac_source' || c.type === 'dc_source');
+    if (powerSource) {
+      probes.push({
+        componentId: powerSource.id,
+        label: `I(${powerSource.label || powerSource.type})`,
+        unit: 'A',
+        measureType: 'current',
+        color: COMPONENT_COLORS[0] ?? '#4caf50',
+      });
+    }
+  }
+
+  // 計算時間縮放：AC 使用自動縮放，DC 使用即時（1:1）
+  const timeScale = hasACSource.value
+    ? autoTimeScale(acSourceFrequency.value)
+    : DC_DEFAULT_TIME_SCALE;
+
+  // 啟動串流模擬
+  const success = streamingSimulation.start(
+    circuitStore.components,
+    circuitStore.wires,
+    probes,
+    { timeScale }
+  );
+
+  if (success) {
+    console.log('串流模擬已啟動', {
+      mode: hasACSource.value ? 'AC' : 'DC',
+      frequency: hasACSource.value ? acSourceFrequency.value : 'N/A',
+      timeScale,
+      probes: probes.length,
+    });
+  }
+}
 
 /**
- * 監聽模擬動畫狀態變化
- * 當模擬停止時，清除波形
+ * 停止串流模擬
+ */
+function stopStreamingSimulation() {
+  if (streamingSimulation.isActive.value) {
+    streamingSimulation.stop();
+    console.log('串流模擬已停止');
+  }
+}
+
+/**
+ * 處理串流控制事件
+ */
+function handleStreamingPlay() {
+  if (streamingSimulation.isPaused.value) {
+    streamingSimulation.resume();
+  } else if (!streamingSimulation.isRunning.value) {
+    startStreamingSimulation();
+  }
+}
+
+function handleStreamingPause() {
+  streamingSimulation.pause();
+}
+
+function handleStreamingStop() {
+  stopStreamingSimulation();
+}
+
+function handleStreamingReset() {
+  streamingSimulation.reset();
+}
+
+function handleTimeScaleChange(scale: number) {
+  streamingSimulation.setTimeScale(scale);
+}
+
+/**
+ * 監聽模擬動畫狀態變化 - 處理串流模式（AC 和 DC）
  */
 watch(
   () => circuitStore.isCurrentAnimating,
   (isAnimating) => {
-    if (!isAnimating) {
-      // 停止時保留最後波形，只停止追加
-      stopWaveformStreaming();
-      waveformStore.stopAccumulationStream();
-      return;
+    if (isAnimating && hasPowerSource.value) {
+      // 有電源，啟動串流模擬
+      startStreamingSimulation();
+    } else if (!isAnimating) {
+      // 停止串流模擬
+      stopStreamingSimulation();
     }
-
-    // 開始時：若已有選取元件，立即開始串流（避免 stop->start 但不換選取時不更新）
-    startWaveformStreamingForSelection();
   }
 );
 
 /**
- * 監聯 DC 模擬結果變化（電壓即時更新觸發）
- * 當電壓值變化導致重新模擬時，將新的電流值追加到波形
+ * 監聽電路元件變化（電壓、頻率等參數改變）
+ * 當模擬正在運行時，重新初始化求解器以反映新的參數
  */
 watch(
-  () => circuitStore.dcResult,
-  (newResult) => {
-    // 只在動畫啟用且模擬成功時處理
-    if (!circuitStore.isCurrentAnimating) return;
-    if (!newResult?.success) return;
-    if (!streamProbeId) return;
-
-    const componentId = circuitStore.selectedComponentId;
-    if (!componentId) return;
-
-    const currentMA = circuitStore.getComponentCurrent(componentId);
-    if (currentMA === null) return;
-
-    const currentA = currentMA / 1000;
-    const elapsedSec = (performance.now() / 1000) - accumulationStartTime;
-
-    // 追加新數據點（累積模式）
-    waveformStore.appendProbeData(streamProbeId, [
-      { time: elapsedSec, value: currentA }
-    ], {
-      maxPoints: STREAM_MAX_POINTS,
-    });
+  () => circuitStore.components.map(c => ({
+    id: c.id,
+    type: c.type,
+    value: c.value,
+    frequency: c.frequency,
+    phase: c.phase,
+    waveformType: c.waveformType,
+  })),
+  () => {
+    // 只在串流模擬運行中時重新啟動
+    if (streamingSimulation.isRunning.value) {
+      console.log('電路參數已變更，重新啟動串流模擬');
+      // 保存當前時間縮放
+      const currentTimeScale = streamingSimulation.timeScale.value;
+      // 停止並重新啟動
+      streamingSimulation.stop();
+      // 重新啟動時使用相同的時間縮放
+      startStreamingSimulationWithScale(currentTimeScale);
+    }
   },
   { deep: true }
 );
 
 /**
- * 監聽瞬態模擬結果變化 (AC 源)
- * 當瞬態模擬完成時，載入時域波形數據
+ * 使用指定的時間縮放啟動串流模擬
  */
-watch(
-  () => circuitStore.transientResult,
-  (newResult) => {
-    if (!newResult?.success) return;
+function startStreamingSimulationWithScale(timeScale: number) {
+  if (!hasPowerSource.value) return;
 
-    // 停止 DC 串流模式
-    stopWaveformStreaming();
+  // 建立探針配置
+  const probes: ProbeConfig[] = [];
 
-    // 建立元件標籤映射
-    const labels = new Map<string, string>();
-    circuitStore.components.forEach(c => {
-      labels.set(c.id, c.label || c.type);
-    });
+  // 為所有電阻、電感、電容建立電流探針
+  for (const component of circuitStore.components) {
+    if (['resistor', 'capacitor', 'inductor', 'led', 'diode'].includes(component.type)) {
+      probes.push({
+        componentId: component.id,
+        label: `I(${component.label || component.type})`,
+        unit: 'A',
+        measureType: 'current',
+        color: COMPONENT_COLORS[probes.length % COMPONENT_COLORS.length],
+      });
+    }
+  }
 
-    // 載入瞬態模擬結果到波形顯示器
-    waveformStore.loadFromTransientResult(newResult, labels);
-    console.log('瞬態模擬波形已載入', newResult.timePoints.length, '個時間點');
-  },
-  { deep: true }
-);
+  // 如果沒有可測量的元件，測量電源
+  if (probes.length === 0) {
+    const powerSource = circuitStore.components.find(c => c.type === 'ac_source' || c.type === 'dc_source');
+    if (powerSource) {
+      probes.push({
+        componentId: powerSource.id,
+        label: `I(${powerSource.label || powerSource.type})`,
+        unit: 'A',
+        measureType: 'current',
+        color: COMPONENT_COLORS[0] ?? '#4caf50',
+      });
+    }
+  }
+
+  // 啟動串流模擬
+  streamingSimulation.start(
+    circuitStore.components,
+    circuitStore.wires,
+    probes,
+    { timeScale }
+  );
+}
 
 function handleSelectExample(id: string) {
   console.log('Selected example:', id);
@@ -249,13 +294,29 @@ function handleTraceVisibilityChanged(payload: { traceId: string; visible: boole
       <section class="workbench">
         <!-- Waveform Viewer (New Implementation) - 使用 v-show 保持 DOM 穩定，避免響應式更新時的 patch 錯誤 -->
         <div v-show="uiStore.showSimulationGraph && useNewWaveformViewer" class="simulation-view waveform-view">
+          <!-- 串流模擬控制列 (AC 模式) -->
+          <StreamingControlBar
+            v-if="useStreamingMode || streamingSimulation.isActive.value"
+            :is-running="streamingSimulation.isRunning.value"
+            :is-paused="streamingSimulation.isPaused.value"
+            :current-sim-time="streamingSimulation.currentSimTime.value"
+            :current-display-time="streamingSimulation.currentDisplayTime.value"
+            :time-scale="streamingSimulation.timeScale.value"
+            :fps="streamingSimulation.fps.value"
+            :error="streamingSimulation.error.value"
+            @play="handleStreamingPlay"
+            @pause="handleStreamingPause"
+            @stop="handleStreamingStop"
+            @reset="handleStreamingReset"
+            @time-scale-change="handleTimeScaleChange"
+          />
           <WaveformViewer
             :traces="waveformStore.waveformTraces"
             :height="350"
             :show-legend="true"
             :show-grid="true"
             :show-cursor="true"
-            :streaming="circuitStore.isCurrentAnimating"
+            :streaming="circuitStore.isCurrentAnimating || streamingSimulation.isRunning.value"
             @trace-visibility-changed="handleTraceVisibilityChanged"
           />
         </div>
