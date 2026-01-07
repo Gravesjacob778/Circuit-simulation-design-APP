@@ -87,7 +87,12 @@ const animationProgress = ref(1);
 let animationFrameId: number | null = null;
 /** 是否正在動畫中 */
 const isAnimating = ref(false);
-/** 動畫持續時間 (ms) */
+/** 動畫持續時間 (ms) 
+ * This param can revise , 
+ * 500 
+ * 1000 
+ * 1200 
+*/
 const ANIMATION_DURATION = 800;
 /** 上一次的 trace 數據指紋，用於檢測變化 */
 let lastTraceFingerprint = '';

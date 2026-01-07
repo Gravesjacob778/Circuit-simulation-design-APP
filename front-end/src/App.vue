@@ -8,7 +8,6 @@ import { ref, computed, watch } from 'vue';
 import AppHeader from '@/components/layout/AppHeader.vue';
 import LeftSidebar from '@/components/layout/LeftSidebar.vue';
 import RightPanel from '@/components/layout/RightPanel.vue';
-import SimulationGraph from '@/components/workspace/SimulationGraph.vue';
 import WaveformViewer from '@/components/workspace/WaveformViewer.vue';
 import CircuitCanvas from '@/components/workspace/CircuitCanvas.vue';
 import ControlBar from '@/components/workspace/ControlBar.vue';
@@ -161,7 +160,7 @@ watch(
 );
 
 /**
- * 監聽 DC 模擬結果變化（電壓即時更新觸發）
+ * 監聯 DC 模擬結果變化（電壓即時更新觸發）
  * 當電壓值變化導致重新模擬時，將新的電流值追加到波形
  */
 watch(
@@ -187,6 +186,31 @@ watch(
     ], {
       maxPoints: STREAM_MAX_POINTS,
     });
+  },
+  { deep: true }
+);
+
+/**
+ * 監聽瞬態模擬結果變化 (AC 源)
+ * 當瞬態模擬完成時，載入時域波形數據
+ */
+watch(
+  () => circuitStore.transientResult,
+  (newResult) => {
+    if (!newResult?.success) return;
+
+    // 停止 DC 串流模式
+    stopWaveformStreaming();
+
+    // 建立元件標籤映射
+    const labels = new Map<string, string>();
+    circuitStore.components.forEach(c => {
+      labels.set(c.id, c.label || c.type);
+    });
+
+    // 載入瞬態模擬結果到波形顯示器
+    waveformStore.loadFromTransientResult(newResult, labels);
+    console.log('瞬態模擬波形已載入', newResult.timePoints.length, '個時間點');
   },
   { deep: true }
 );
@@ -234,10 +258,6 @@ function handleTraceVisibilityChanged(payload: { traceId: string; visible: boole
             :streaming="circuitStore.isCurrentAnimating"
             @trace-visibility-changed="handleTraceVisibilityChanged"
           />
-        </div>
-        <!-- Legacy Simulation Graph (Plotly) -->
-        <div v-show="uiStore.showSimulationGraph && !useNewWaveformViewer" class="simulation-view">
-          <SimulationGraph />
         </div>
 
         <!-- Circuit Editor (Konva) -->

@@ -6,6 +6,7 @@
 
 import { computed } from 'vue';
 import { useCircuitStore } from '@/stores/circuitStore';
+import type { WaveformType } from '@/types/circuit';
 
 const circuitStore = useCircuitStore();
 
@@ -27,14 +28,33 @@ const LED_COLOR_OPTIONS = [
   { value: 'White', label: '⚪ White', color: '#ffffff', vf: '3.0V' },
 ] as const;
 
+// AC 波形類型選項
+const WAVEFORM_TYPE_OPTIONS: { value: WaveformType; label: string; icon: string }[] = [
+  { value: 'sine', label: '正弦波', icon: '∿' },
+  { value: 'square', label: '方波', icon: '⊓' },
+  { value: 'triangle', label: '三角波', icon: '△' },
+  { value: 'sawtooth', label: '鋸齒波', icon: '⩘' },
+];
+
 // 選取的元件
 const selectedComponent = computed(() => circuitStore.selectedComponent);
 
 // 判斷是否為 LED 元件
 const isLED = computed(() => selectedComponent.value?.type === 'led');
 
+// 判斷是否為 AC 電源
+const isACSource = computed(() => selectedComponent.value?.type === 'ac_source');
+
 // 取得目前 LED 顏色
 const currentLEDColor = computed(() => selectedComponent.value?.ledColor ?? '');
+
+// 取得 AC 源參數
+const acFrequency = computed(() => selectedComponent.value?.frequency ?? 60);
+const acPhase = computed(() => selectedComponent.value?.phase ?? 0);
+const acWaveformType = computed(() => selectedComponent.value?.waveformType ?? 'sine');
+
+// 相位顯示轉換 (rad -> deg)
+const acPhaseDegrees = computed(() => Math.round((acPhase.value * 180) / Math.PI));
 
 function handleValueChange(newValue: number) {
   if (selectedComponent.value) {
@@ -52,6 +72,32 @@ function handleLEDColorChange(event: Event) {
       'ledColor',
       color || undefined
     );
+  }
+}
+
+// AC 源參數變更處理
+function handleFrequencyChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const freq = Math.max(0.1, Number(target.value)); // 最小 0.1 Hz
+  if (selectedComponent.value) {
+    circuitStore.updateComponentProperty(selectedComponent.value.id, 'frequency', freq);
+  }
+}
+
+function handlePhaseChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const degrees = Number(target.value);
+  const radians = (degrees * Math.PI) / 180;
+  if (selectedComponent.value) {
+    circuitStore.updateComponentProperty(selectedComponent.value.id, 'phase', radians);
+  }
+}
+
+function handleWaveformTypeChange(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  const waveformType = target.value as WaveformType;
+  if (selectedComponent.value) {
+    circuitStore.updateComponentProperty(selectedComponent.value.id, 'waveformType', waveformType);
   }
 }
 </script>
@@ -116,6 +162,54 @@ function handleLEDColorChange(event: Event) {
               </option>
             </select>
           </div>
+          <!-- AC Source Parameters (僅 AC 電源顯示) -->
+          <template v-if="isACSource">
+            <div class="prop-item">
+              <label class="prop-label">Frequency</label>
+              <div class="prop-input-group">
+                <input
+                  type="number"
+                  :value="acFrequency"
+                  class="prop-input"
+                  min="0.1"
+                  step="1"
+                  @input="handleFrequencyChange"
+                />
+                <span class="prop-unit">Hz</span>
+              </div>
+            </div>
+            <div class="prop-item">
+              <label class="prop-label">Phase</label>
+              <div class="prop-input-group">
+                <input
+                  type="number"
+                  :value="acPhaseDegrees"
+                  class="prop-input"
+                  min="-360"
+                  max="360"
+                  step="15"
+                  @input="handlePhaseChange"
+                />
+                <span class="prop-unit">°</span>
+              </div>
+            </div>
+            <div class="prop-item">
+              <label class="prop-label">Waveform</label>
+              <select
+                class="prop-select"
+                :value="acWaveformType"
+                @change="handleWaveformTypeChange"
+              >
+                <option
+                  v-for="opt in WAVEFORM_TYPE_OPTIONS"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.icon }} {{ opt.label }}
+                </option>
+              </select>
+            </div>
+          </template>
           <div class="prop-item" v-if="selectedComponent.value !== undefined">
             <label class="prop-label">Value</label>
             <div class="prop-input-group">

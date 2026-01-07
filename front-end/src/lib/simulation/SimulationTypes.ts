@@ -2,6 +2,8 @@
  * SimulationTypes.ts - 模擬相關的類型定義
  */
 
+import type { WaveformType } from '@/types/circuit';
+
 // ========== LED-001 規範常數 (Circuit Design Rule Specification v1.1) ==========
 /**
  * LED 顏色類型
@@ -90,4 +92,54 @@ export interface ComponentStamp {
   value: number;
   /** 對於電壓源，額外電流變數的索引 */
   currentVarIndex?: number;
+  /** AC 源頻率 (Hz) */
+  frequency?: number;
+  /** AC 源相位 (rad) */
+  phase?: number;
+  /** AC 源波形類型 */
+  waveformType?: WaveformType;
+}
+
+// ========== 瞬態分析類型定義 ==========
+
+/**
+ * 瞬態分析選項
+ */
+export interface TransientOptions {
+  /** 模擬開始時間 (秒) */
+  startTime: number;
+  /** 模擬結束時間 (秒) */
+  endTime: number;
+  /** 時間步長 (秒)，若未指定則自動計算 */
+  timeStep?: number;
+  /** 最大迭代次數 (用於非線性收斂) */
+  maxIterations?: number;
+}
+
+/**
+ * 動態元件狀態 (電容電壓、電感電流)
+ */
+export interface ComponentState {
+  /** 電容元件 ID → 電壓 (V) */
+  capacitorVoltages: Map<string, number>;
+  /** 電感元件 ID → 電流 (A) */
+  inductorCurrents: Map<string, number>;
+}
+
+/**
+ * 瞬態分析結果
+ */
+export interface TransientSimulationResult {
+  /** 時間點陣列 (秒) */
+  timePoints: number[];
+  /** 節點電壓歷史 (節點ID → 電壓陣列) */
+  nodeVoltageHistory: Map<string, number[]>;
+  /** 支路電流歷史 (元件ID → 電流陣列) */
+  branchCurrentHistory: Map<string, number[]>;
+  /** 是否成功 */
+  success: boolean;
+  /** 錯誤訊息 */
+  error?: string;
+  /** 模擬選項 (用於記錄) */
+  options: TransientOptions;
 }

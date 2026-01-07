@@ -7,3 +7,4 @@ export * from './Matrix';
 export * from './CircuitGraph';
 export * from './MNASolver';
 export * from './CircuitRuleEngine';
+export * from './TransientSolver';

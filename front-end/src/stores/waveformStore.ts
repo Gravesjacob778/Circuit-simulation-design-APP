@@ -13,6 +13,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { WaveformTrace, WaveformUnit, WaveformDataPoint } from '@/types/waveform';
+import type { TransientSimulationResult } from '@/lib/simulation';
 
 // ========== Probe 定義 ==========
 
@@ -253,6 +254,42 @@ export const useWaveformStore = defineStore('waveform', () => {
 
             updateProbeData(probe.probeId, data);
         }
+
+        // 更新時間範圍
+        updateTimeRangeFromData();
+    }
+
+    /**
+     * 從瞬態模擬結果載入資料
+     * 專門用於 AC 時域分析結果
+     */
+    function loadFromTransientResult(
+        result: TransientSimulationResult,
+        componentLabels: Map<string, string>
+    ): void {
+        // 清除現有探針
+        clearAll();
+
+        const timePoints = result.timePoints;
+
+        // 為每個支路電流建立探針
+        result.branchCurrentHistory.forEach((currents, componentId) => {
+            const label = componentLabels.get(componentId) ?? componentId;
+            
+            const probe = addProbe({
+                componentId,
+                channelId: 'current',
+                unit: 'A',
+                label: `I(${label})`,
+            });
+
+            const data: WaveformDataPoint[] = timePoints.map((time, i) => ({
+                time,
+                value: currents[i] ?? 0,
+            }));
+
+            updateProbeData(probe.probeId, data);
+        });
 
         // 更新時間範圍
         updateTimeRangeFromData();
@@ -522,6 +559,7 @@ export const useWaveformStore = defineStore('waveform', () => {
         appendProbeData,
         batchUpdateData,
         loadFromSimulation,
+        loadFromTransientResult,
         loadDemoData,
         clearAll,
         addComponentWaveform,

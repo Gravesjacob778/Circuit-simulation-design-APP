@@ -2,7 +2,14 @@
  * Component Definitions - 電路元件定義
  */
 
-import type { ComponentDefinition, ComponentType } from '@/types/circuit';
+import type { ComponentDefinition, ComponentType, WaveformType } from '@/types/circuit';
+
+// AC 源預設屬性
+export const AC_SOURCE_DEFAULTS = {
+    frequency: 60, // Hz
+    phase: 0, // radians
+    waveformType: 'sine' as WaveformType,
+};
 
 export const componentDefinitions: ComponentDefinition[] = [
     // 電源

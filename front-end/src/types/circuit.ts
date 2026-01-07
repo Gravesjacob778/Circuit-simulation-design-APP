@@ -19,6 +19,9 @@ export type ComponentType =
     | 'ammeter'
     | 'voltmeter';
 
+// AC Source waveform types
+export type WaveformType = 'sine' | 'square' | 'triangle' | 'sawtooth';
+
 // Port definition
 export interface Port {
     id: string;
@@ -43,6 +46,10 @@ export interface CircuitComponent {
     // LED-specific properties (LED-001 Rule)
     ledColor?: 'Red' | 'Green' | 'Blue' | 'White'; // LED color for V_f lookup
     vfOverride?: number; // User-defined forward voltage (V), takes precedence over ledColor
+    // AC Source-specific properties (for transient analysis)
+    frequency?: number; // Frequency in Hz (default: 60Hz)
+    phase?: number; // Phase angle in radians (default: 0)
+    waveformType?: WaveformType; // Waveform shape (default: 'sine')
 }
 
 // Wire connection

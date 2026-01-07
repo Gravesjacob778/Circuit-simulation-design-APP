@@ -13,8 +13,16 @@ import type {
     ComponentType,
     SimulationData,
 } from '@/types/circuit';
-import { getComponentDefinition } from '@/config/componentDefinitions';
-import { evaluateCircuitDesignRules, runDCAnalysis, type CircuitRuleViolation, type DCSimulationResult } from '@/lib/simulation';
+import { getComponentDefinition, AC_SOURCE_DEFAULTS } from '@/config/componentDefinitions';
+import {
+    evaluateCircuitDesignRules,
+    runDCAnalysis,
+    runTransientAnalysis,
+    type CircuitRuleViolation,
+    type DCSimulationResult,
+    type TransientSimulationResult,
+    type TransientOptions,
+} from '@/lib/simulation';
 
 // ===== Utility Functions =====
 
@@ -40,6 +48,7 @@ export const useCircuitStore = defineStore('circuit', () => {
     const isSimulating = ref(false);
     const isCurrentAnimating = ref(false); // 電流流動動畫狀態
     const dcResult = ref<DCSimulationResult | null>(null); // DC 模擬結果
+    const transientResult = ref<TransientSimulationResult | null>(null); // 瞬態模擬結果
     const simulationError = ref<string | null>(null); // 模擬錯誤訊息
     const ruleViolations = ref<CircuitRuleViolation[]>([]); // CDRS v1 規則檢查結果
 
@@ -184,6 +193,12 @@ export const useCircuitStore = defineStore('circuit', () => {
                 id: `${uuidv4()}-p${index}`,
             })),
             selected: false,
+            // AC 源預設屬性
+            ...(type === 'ac_source' && {
+                frequency: AC_SOURCE_DEFAULTS.frequency,
+                phase: AC_SOURCE_DEFAULTS.phase,
+                waveformType: AC_SOURCE_DEFAULTS.waveformType,
+            }),
         };
 
         components.value.push(newComponent);
@@ -223,12 +238,23 @@ export const useCircuitStore = defineStore('circuit', () => {
     }
 
     /**
+     * 判斷電路是否需要瞬態分析（含有 AC 源）
+     */
+    function needsTransientAnalysis(): boolean {
+        return components.value.some(c => c.type === 'ac_source');
+    }
+
+    /**
      * 防抖模擬觸發器 - 當電壓值變化時自動重新模擬
      * 使用 150ms 防抖避免快速輸入時過度計算
      */
     const triggerDebouncedSimulation = debounce(() => {
         if (isCurrentAnimating.value) {
-            runSimulation();
+            if (needsTransientAnalysis()) {
+                runTransientSimulation();
+            } else {
+                runSimulation();
+            }
         }
     }, 150);
 
@@ -245,8 +271,11 @@ export const useCircuitStore = defineStore('circuit', () => {
             (component as Record<string, unknown>)[property] = value;
             saveState(); // 記錄操作
 
-            // 當電壓/電流值變化且動畫啟用時，自動重新模擬
-            if (property === 'value' && isCurrentAnimating.value) {
+            // 需要觸發重新模擬的屬性
+            const simulationTriggerProps = ['value', 'frequency', 'phase', 'waveformType'];
+            
+            // 當這些屬性變化且動畫啟用時，自動重新模擬
+            if (simulationTriggerProps.includes(property) && isCurrentAnimating.value) {
                 lastValueChange.value = {
                     componentId,
                     timestamp: Date.now(),
@@ -388,13 +417,20 @@ export const useCircuitStore = defineStore('circuit', () => {
 
     /**
      * 切換電流動畫並執行模擬
+     * 自動判斷：有 AC 源時執行瞬態分析，否則執行 DC 分析
      */
     function toggleCurrentAnimation(): void {
         isCurrentAnimating.value = !isCurrentAnimating.value;
 
         if (isCurrentAnimating.value) {
-            // 執行 DC 模擬
-            const ok = runSimulation();
+            let ok: boolean;
+            if (needsTransientAnalysis()) {
+                // 有 AC 源，執行瞬態分析
+                ok = runTransientSimulation();
+            } else {
+                // 純 DC 電路，執行 DC 分析
+                ok = runSimulation();
+            }
             if (!ok) {
                 // 若模擬失敗，避免顯示「正在動畫」的錯覺
                 isCurrentAnimating.value = false;
@@ -473,6 +509,87 @@ export const useCircuitStore = defineStore('circuit', () => {
     }
 
     /**
+     * 執行瞬態分析 (AC 時域模擬)
+     * @param options 可選的瞬態分析選項
+     * @returns 是否成功
+     */
+    function runTransientSimulation(options?: Partial<TransientOptions>): boolean {
+        isSimulating.value = true;
+        simulationError.value = null;
+        ruleViolations.value = evaluateCircuitDesignRules(components.value, wires.value);
+
+        const blockingErrors = ruleViolations.value.filter((v) => v.severity === 'ERROR');
+        if (blockingErrors.length > 0) {
+            transientResult.value = null;
+            simulationError.value = blockingErrors[0]?.message ?? 'Circuit rule violation (ERROR)';
+            isSimulating.value = false;
+            return false;
+        }
+
+        try {
+            const result = runTransientAnalysis(components.value, wires.value, options);
+            transientResult.value = result;
+
+            if (result.success) {
+                // 更新 simulationData 用於波形顯示
+                updateTransientSimulationData(result);
+                console.log('瞬態模擬成功', result);
+                return true;
+            } else {
+                simulationError.value = result.error || '未知錯誤';
+                console.warn('瞬態模擬失敗:', result.error);
+                return false;
+            }
+        } catch (error) {
+            simulationError.value = error instanceof Error ? error.message : '模擬執行錯誤';
+            console.error('瞬態模擬錯誤:', error);
+            return false;
+        } finally {
+            isSimulating.value = false;
+        }
+    }
+
+    /**
+     * 更新瞬態模擬數據（用於波形顯示）
+     */
+    function updateTransientSimulationData(result: TransientSimulationResult): void {
+        const signals: SimulationData['signals'] = [];
+
+        // 為 AC 源建立電壓波形
+        result.branchCurrentHistory.forEach((currents, componentId) => {
+            const comp = components.value.find(c => c.id === componentId);
+            if (comp && comp.type === 'ac_source') {
+                // AC 源顯示電壓波形 (從節點電壓歷史取得)
+                // 這裡我們可以用電流反推或直接用節點電壓
+                signals.push({
+                    name: `I(${comp.label || 'AC'})`,
+                    values: currents.map(i => i * 1000), // mA
+                    unit: 'mA',
+                    color: getSignalColor(signals.length),
+                });
+            }
+        });
+
+        // 為其他元件建立電流波形
+        result.branchCurrentHistory.forEach((currents, componentId) => {
+            const comp = components.value.find(c => c.id === componentId);
+            if (comp && comp.type !== 'ac_source' && comp.type !== 'dc_source' && comp.type !== 'ground') {
+                signals.push({
+                    name: `I(${comp.label || comp.type})`,
+                    values: currents.map(i => i * 1000), // mA
+                    unit: 'mA',
+                    color: getSignalColor(signals.length),
+                });
+            }
+        });
+
+        simulationData.value = {
+            time: result.timePoints,
+            signals,
+        };
+    }
+
+    /**
      * 取得訊號顏色
      */
     function getSignalColor(index: number): string {
@@ -521,6 +638,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         isSimulating,
         isCurrentAnimating,
         dcResult,
+        transientResult,
         simulationError,
         ruleViolations,
         canUndo,
@@ -547,6 +665,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         stopSimulation,
         toggleCurrentAnimation,
         runSimulation,
+        runTransientSimulation,
         getComponentCurrent,
         getComponentVoltage,
         undo,
