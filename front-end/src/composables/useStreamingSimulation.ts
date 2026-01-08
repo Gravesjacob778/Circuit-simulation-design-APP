@@ -79,6 +79,7 @@ export function useStreamingSimulation() {
   let frameCount = 0;
   let fpsUpdateTime = 0;
   let probeIds: Map<string, string> = new Map(); // componentId -> probeId
+  let effectiveTimeScale = 1; // 實際使用的時間縮放（平滑過渡用）
 
   const waveformStore = useWaveformStore();
 
@@ -150,6 +151,7 @@ export function useStreamingSimulation() {
     frameCount = 0;
     fpsUpdateTime = performance.now();
     lastFrameTime = 0;
+    effectiveTimeScale = timeScale.value; // 初始化平滑過渡值
     isRunning.value = true;
     isPaused.value = false;
 
@@ -269,9 +271,14 @@ export function useStreamingSimulation() {
       fpsUpdateTime = timestamp;
     }
 
+    // 平滑過渡時間縮放，避免突變導致計算量暴增
+    const targetScale = timeScale.value;
+    const smoothFactor = 0.15; // 每幀向目標靠近 15%
+    effectiveTimeScale += (targetScale - effectiveTimeScale) * smoothFactor;
+
     // 計算這一幀需要推進的模擬時間
     const displayTimeToAdvance = deltaMs / 1000; // 真實經過的時間（秒）
-    const simTimeToAdvance = displayTimeToAdvance * timeScale.value; // 模擬時間（秒）
+    const simTimeToAdvance = displayTimeToAdvance * effectiveTimeScale; // 模擬時間（秒）
 
     // 計算需要多少個模擬步驟
     const dt = solver.getTimeStep();

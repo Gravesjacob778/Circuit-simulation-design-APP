@@ -8,6 +8,30 @@ import { computed, ref, watch } from 'vue';
 import { Play, Pause, Square, RotateCcw, Gauge, Clock } from 'lucide-vue-next';
 import { formatTimeScale } from '@/composables/useStreamingSimulation';
 
+// 節流函數 - 限制函數調用頻率
+function throttle<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+  let lastCall = 0;
+  let scheduled = false;
+  let lastArgs: Parameters<T> | null = null;
+
+  return ((...args: Parameters<T>) => {
+    const now = Date.now();
+    lastArgs = args;
+
+    if (now - lastCall >= ms) {
+      lastCall = now;
+      fn(...args);
+    } else if (!scheduled) {
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        lastCall = Date.now();
+        if (lastArgs) fn(...lastArgs);
+      }, ms - (now - lastCall));
+    }
+  }) as T;
+}
+
 const props = defineProps<{
   /** 是否正在運行 */
   isRunning: boolean;
@@ -41,13 +65,18 @@ watch(() => props.timeScale, (newScale) => {
   logScale.value = Math.log10(newScale);
 });
 
+// 節流發送時間縮放事件 (每 50ms 最多觸發一次)
+const emitThrottledScaleChange = throttle((scale: number) => {
+  emit('timeScaleChange', scale);
+}, 50);
+
 // 滑桿變化時更新時間縮放
 function handleScaleChange(event: Event) {
   const target = event.target as HTMLInputElement;
   const log = parseFloat(target.value);
   logScale.value = log;
   const scale = Math.pow(10, log);
-  emit('timeScaleChange', scale);
+  emitThrottledScaleChange(scale);
 }
 
 // 格式化時間
