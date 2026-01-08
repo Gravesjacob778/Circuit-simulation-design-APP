@@ -84,29 +84,21 @@ function startStreamingSimulation() {
   // 建立探針配置
   const probes: ProbeConfig[] = [];
 
-  // 為所有電阻、電感、電容建立電流探針
+  // 所有可計算電流的元件類型
+  const currentMeasurableTypes = [
+    'resistor', 'capacitor', 'inductor', 'led', 'diode',
+    'switch', 'ammeter', 'dc_source', 'ac_source'
+  ];
+
+  // 為所有可計算電流的元件建立電流探針
   for (const component of circuitStore.components) {
-    if (['resistor', 'capacitor', 'inductor', 'led', 'diode'].includes(component.type)) {
+    if (currentMeasurableTypes.includes(component.type)) {
       probes.push({
         componentId: component.id,
         label: `I(${component.label || component.type})`,
         unit: 'A',
         measureType: 'current',
         color: COMPONENT_COLORS[probes.length % COMPONENT_COLORS.length],
-      });
-    }
-  }
-
-  // 如果沒有可測量的元件，測量電源
-  if (probes.length === 0) {
-    const powerSource = circuitStore.components.find(c => c.type === 'ac_source' || c.type === 'dc_source');
-    if (powerSource) {
-      probes.push({
-        componentId: powerSource.id,
-        label: `I(${powerSource.label || powerSource.type})`,
-        unit: 'A',
-        measureType: 'current',
-        color: COMPONENT_COLORS[0] ?? '#4caf50',
       });
     }
   }
@@ -224,29 +216,21 @@ function startStreamingSimulationWithScale(timeScale: number) {
   // 建立探針配置
   const probes: ProbeConfig[] = [];
 
-  // 為所有電阻、電感、電容建立電流探針
+  // 所有可計算電流的元件類型
+  const currentMeasurableTypes = [
+    'resistor', 'capacitor', 'inductor', 'led', 'diode',
+    'switch', 'ammeter', 'dc_source', 'ac_source'
+  ];
+
+  // 為所有可計算電流的元件建立電流探針
   for (const component of circuitStore.components) {
-    if (['resistor', 'capacitor', 'inductor', 'led', 'diode'].includes(component.type)) {
+    if (currentMeasurableTypes.includes(component.type)) {
       probes.push({
         componentId: component.id,
         label: `I(${component.label || component.type})`,
         unit: 'A',
         measureType: 'current',
         color: COMPONENT_COLORS[probes.length % COMPONENT_COLORS.length],
-      });
-    }
-  }
-
-  // 如果沒有可測量的元件，測量電源
-  if (probes.length === 0) {
-    const powerSource = circuitStore.components.find(c => c.type === 'ac_source' || c.type === 'dc_source');
-    if (powerSource) {
-      probes.push({
-        componentId: powerSource.id,
-        label: `I(${powerSource.label || powerSource.type})`,
-        unit: 'A',
-        measureType: 'current',
-        color: COMPONENT_COLORS[0] ?? '#4caf50',
       });
     }
   }
