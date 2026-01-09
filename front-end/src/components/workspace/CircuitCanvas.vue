@@ -579,7 +579,8 @@ function renderAllWires() {
     const paths = animationManager.getAllWirePathsWithDirection(
       circuitStore.components,
       circuitStore.wires,
-      nodeManager
+      nodeManager,
+      circuitStore.dcResult?.branchCurrents
     );
     animationManager.reinitializeParticles(paths);
   }
@@ -794,7 +795,8 @@ onMounted(() => {
     const paths = animationManager.getAllWirePathsWithDirection(
       circuitStore.components,
       circuitStore.wires,
-      nodeManager
+      nodeManager,
+      circuitStore.dcResult?.branchCurrents
     );
     animationManager.createParticles(paths);
     animationManager.start();
@@ -907,7 +909,8 @@ watch(
       const paths = animationManager.getAllWirePathsWithDirection(
         circuitStore.components,
         circuitStore.wires,
-        nodeManager
+        nodeManager,
+        circuitStore.dcResult?.branchCurrents
       );
       animationManager.createParticles(paths);
       animationManager.start();

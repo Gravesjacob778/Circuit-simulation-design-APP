@@ -102,15 +102,21 @@ export class KonvaAnimationManager {
     /**
      * 取得所有導線的路徑點（包含方向資訊）
      * 不依賴 Vue/Store，所有資料由參數傳入。
+     * @param components 電路元件列表
+     * @param wires 導線列表
+     * @param nodeManager Konva 節點管理器
+     * @param branchCurrents 各元件電流值（來自模擬結果）
      */
     public getAllWirePathsWithDirection(
         components: CircuitComponent[],
         wires: Wire[],
-        nodeManager: KonvaNodeManager | null
+        nodeManager: KonvaNodeManager | null,
+        branchCurrents?: Map<string, number>
     ): CurrentFlowPath[] {
         const paths: CurrentFlowPath[] = [];
         if (!nodeManager) return paths;
 
+        // 建立預設路徑（所有方向為 1）
         const buildDefaultPaths = (): CurrentFlowPath[] => {
             nodeManager.forEachWireNode((wireGroup, wireId) => {
                 const wire = wires.find((w) => w.id === wireId);
@@ -147,51 +153,119 @@ export class KonvaAnimationManager {
             return buildDefaultPaths();
         }
 
-        const visitedPorts = new Set<string>();
+        // 建立端點到節點的映射（Union-Find 概念）
+        // 同一個電氣節點上的所有端點應該有相同的電流流向
+        const portToNode = new Map<string, string>();
+
+        // 初始化：每個端點是自己的節點
+        for (const comp of components) {
+            for (const port of comp.ports) {
+                const portKey = `${comp.id}:${port.id}`;
+                portToNode.set(portKey, portKey);
+            }
+        }
+
+        // 根據導線合併節點
+        const findRoot = (key: string): string => {
+            let current = key;
+            while (portToNode.get(current) !== current) {
+                current = portToNode.get(current)!;
+            }
+            portToNode.set(key, current);
+            return current;
+        };
+
+        for (const wire of wires) {
+            const fromKey = `${wire.fromComponentId}:${wire.fromPortId}`;
+            const toKey = `${wire.toComponentId}:${wire.toPortId}`;
+            const fromRoot = findRoot(fromKey);
+            const toRoot = findRoot(toKey);
+            if (fromRoot !== toRoot) {
+                portToNode.set(toRoot, fromRoot);
+            }
+        }
+
+        // 節點電流流向：記錄電流從哪個方向進入/離開每個節點
+        // nodeFlowDirection: nodeId -> { incomingFromComponent, outgoingToComponent }
+        const nodeFlowDirection = new Map<string, 1 | -1>();
         const wireDirections = new Map<string, 1 | -1>();
+        const visitedNodes = new Set<string>();
 
-        const traceCurrentPath = (
-            componentId: string,
-            portId: string,
-            visitedWires: Set<string>
-        ) => {
-            const key = `${componentId}:${portId}`;
-            if (visitedPorts.has(key)) return;
-            visitedPorts.add(key);
+        // 從電源正極開始 BFS 追蹤電流路徑
+        const startPortKey = `${primarySource.id}:${positivePort.id}`;
+        const startNodeId = findRoot(startPortKey);
 
-            const connectedWires = wires.filter(
-                (w) =>
-                    (w.fromComponentId === componentId && w.fromPortId === portId) ||
-                    (w.toComponentId === componentId && w.toPortId === portId)
-            );
+        // 使用 BFS 從電源正極向外傳播
+        const queue: Array<{ nodeId: string; incomingDirection: 1 | -1 }> = [];
+        queue.push({ nodeId: startNodeId, incomingDirection: 1 }); // 電流從正極「流出」
+        visitedNodes.add(startNodeId);
+        nodeFlowDirection.set(startNodeId, 1);
 
-            for (const wire of connectedWires) {
-                if (visitedWires.has(wire.id)) continue;
-                visitedWires.add(wire.id);
+        while (queue.length > 0) {
+            const { nodeId: currentNodeId, incomingDirection } = queue.shift()!;
 
-                const isFromEnd =
-                    wire.fromComponentId === componentId && wire.fromPortId === portId;
-                const direction: 1 | -1 = isFromEnd ? 1 : -1;
-                wireDirections.set(wire.id, direction);
+            // 找出此節點連接的所有導線
+            for (const wire of wires) {
+                const fromKey = `${wire.fromComponentId}:${wire.fromPortId}`;
+                const toKey = `${wire.toComponentId}:${wire.toPortId}`;
+                const fromNode = findRoot(fromKey);
+                const toNode = findRoot(toKey);
 
-                const nextComponentId = isFromEnd
-                    ? wire.toComponentId
-                    : wire.fromComponentId;
-                const nextPortId = isFromEnd ? wire.toPortId : wire.fromPortId;
+                let nextNodeId: string | null = null;
+                let wireDirection: 1 | -1 = 1;
 
-                const nextComponent = components.find((c) => c.id === nextComponentId);
-                if (nextComponent) {
-                    for (const port of nextComponent.ports) {
-                        if (port.id !== nextPortId) {
-                            traceCurrentPath(nextComponentId, port.id, visitedWires);
+                if (fromNode === currentNodeId && !visitedNodes.has(toNode)) {
+                    // 電流從 from 端流向 to 端
+                    nextNodeId = toNode;
+                    wireDirection = incomingDirection; // 維持傳入的方向
+                } else if (toNode === currentNodeId && !visitedNodes.has(fromNode)) {
+                    // 電流從 to 端流向 from 端（反向）
+                    nextNodeId = fromNode;
+                    wireDirection = (incomingDirection === 1 ? -1 : 1) as 1 | -1;
+                }
+
+                if (nextNodeId !== null && !wireDirections.has(wire.id)) {
+                    wireDirections.set(wire.id, wireDirection);
+
+                    // 檢查下一個節點是否穿過元件
+                    // 電流穿過元件時，方向取決於元件電流的正負
+                    const nextComponent = components.find(c => {
+                        const ports = c.ports;
+                        for (const port of ports) {
+                            const portKey = `${c.id}:${port.id}`;
+                            if (findRoot(portKey) === nextNodeId) {
+                                return true;
+                            }
                         }
+                        return false;
+                    });
+
+                    let nextDirection = wireDirection;
+                    if (nextComponent && branchCurrents) {
+                        const componentCurrent = branchCurrents.get(nextComponent.id);
+                        if (componentCurrent !== undefined) {
+                            // 如果電流為負，表示實際流向與定義方向相反
+                            nextDirection = componentCurrent >= 0 ? wireDirection : ((wireDirection === 1 ? -1 : 1) as 1 | -1);
+                        }
+                    }
+
+                    if (!visitedNodes.has(nextNodeId)) {
+                        visitedNodes.add(nextNodeId);
+                        nodeFlowDirection.set(nextNodeId, nextDirection);
+                        queue.push({ nodeId: nextNodeId, incomingDirection: nextDirection });
                     }
                 }
             }
-        };
+        }
 
-        traceCurrentPath(primarySource.id, positivePort.id, new Set());
+        // 處理未被 BFS 訪問到的導線（可能是孤立的分支）
+        for (const wire of wires) {
+            if (!wireDirections.has(wire.id)) {
+                wireDirections.set(wire.id, 1);
+            }
+        }
 
+        // 建立最終路徑
         nodeManager.forEachWireNode((wireGroup, wireId) => {
             const wire = wires.find((w) => w.id === wireId);
             if (!wire) return;
