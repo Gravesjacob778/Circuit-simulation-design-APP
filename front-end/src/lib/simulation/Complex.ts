@@ -148,27 +148,6 @@ export function clone(c: Complex): Complex {
   return { re: c.re, im: c.im };
 }
 
-// ============================================
-// 工程計算函數
-// ============================================
-
-/**
- * 轉換為分貝
- * dB = 20 * log10(magnitude)
- */
-export function toDecibels(mag: number): number {
-  if (mag <= 0) {
-    return -Infinity;
-  }
-  return 20 * Math.log10(mag);
-}
-
-/**
- * 從分貝轉換回線性值
- */
-export function fromDecibels(db: number): number {
-  return Math.pow(10, db / 20);
-}
 
 // ============================================
 // 阻抗計算函數

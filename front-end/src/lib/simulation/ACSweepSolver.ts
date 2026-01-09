@@ -31,7 +31,6 @@ import {
   magnitude,
   phase,
   phaseDegrees,
-  toDecibels,
   admittanceCapacitor,
   admittanceInductor,
   type Complex,
