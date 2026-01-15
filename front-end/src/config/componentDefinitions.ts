@@ -156,6 +156,27 @@ export const componentDefinitions: ComponentDefinition[] = [
             { name: '-', offsetX: 40, offsetY: 0 },
         ],
     },
+    // 數位邏輯閘
+    {
+        type: 'logic_and',
+        label: 'AND Gate',
+        icon: 'and-gate',
+        ports: [
+            { name: 'A', offsetX: -40, offsetY: -10 },
+            { name: 'B', offsetX: -40, offsetY: 10 },
+            { name: 'Y', offsetX: 40, offsetY: 0 },
+        ],
+    },
+    {
+        type: 'logic_or',
+        label: 'OR Gate',
+        icon: 'or-gate',
+        ports: [
+            { name: 'A', offsetX: -40, offsetY: -10 },
+            { name: 'B', offsetX: -40, offsetY: 10 },
+            { name: 'Y', offsetX: 40, offsetY: 0 },
+        ],
+    },
 ];
 
 /**
@@ -185,6 +206,8 @@ export function getToolbarComponents(): ComponentDefinition[] {
         'switch',
         'ammeter',
         'voltmeter',
+        'logic_and',
+        'logic_or',
     ];
 
     return toolbarOrder

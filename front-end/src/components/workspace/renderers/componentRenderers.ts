@@ -553,6 +553,295 @@ export function drawGenericComponent(group: Konva.Group, component: CircuitCompo
 }
 
 /**
+ * 繪製AND邏輯閘
+ */
+export function drawANDGate(group: Konva.Group, component: CircuitComponent) {
+    const strokeColor = component.selected ? '#4caf50' : '#cccccc';
+    const strokeWidth = component.selected ? 3 : 2;
+
+    // 判斷輸出狀態 (用於視覺回饋)
+    const outputHigh = component.logicOutput === true;
+    const inputAHigh = component.logicInputA === true;
+    const inputBHigh = component.logicInputB === true;
+
+    // 輸出顏色：HIGH 為亮綠色，LOW 為灰色
+    const outputColor = outputHigh ? '#00ff00' : '#ff5722';
+    const inputAColor = inputAHigh ? '#00bfff' : '#2196f3';
+    const inputBColor = inputBHigh ? '#00bfff' : '#2196f3';
+
+    // 如果選取，添加高亮背景
+    if (component.selected) {
+        const highlight = new Konva.Rect({
+            x: -45,
+            y: -25,
+            width: 90,
+            height: 50,
+            fill: 'rgba(76, 175, 80, 0.1)',
+            stroke: '#4caf50',
+            strokeWidth: 2,
+            cornerRadius: 4,
+            shadowColor: '#4caf50',
+            shadowBlur: 10,
+            shadowOpacity: 0.5,
+        });
+        group.add(highlight);
+    }
+
+    // AND閘的標準符號：左側平坦，右側圓弧
+    // 左側直線
+    const leftLine = new Konva.Line({
+        points: [-30, -20, -30, 20],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+
+    // 頂部和底部線
+    const topLine = new Konva.Line({
+        points: [-30, -20, 0, -20],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    const bottomLine = new Konva.Line({
+        points: [-30, 20, 0, 20],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+
+    // 右側圓弧
+    const arc = new Konva.Arc({
+        x: 0,
+        y: 0,
+        innerRadius: 0,
+        outerRadius: 20,
+        angle: 180,
+        rotation: -90,
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+        fill: 'transparent',
+    });
+
+    group.add(leftLine, topLine, bottomLine, arc);
+
+    // 輸入端點 A (帶狀態顯示)
+    const portA = new Konva.Circle({
+        x: -40,
+        y: -10,
+        radius: 4,
+        fill: inputAColor,
+        stroke: inputAColor,
+        strokeWidth: 1,
+        name: 'port',
+    });
+    // 輸入 A 狀態發光效果
+    if (inputAHigh) {
+        portA.shadowColor(inputAColor);
+        portA.shadowBlur(8);
+        portA.shadowOpacity(0.8);
+    }
+
+    // 輸入端點 B (帶狀態顯示)
+    const portB = new Konva.Circle({
+        x: -40,
+        y: 10,
+        radius: 4,
+        fill: inputBColor,
+        stroke: inputBColor,
+        strokeWidth: 1,
+        name: 'port',
+    });
+    // 輸入 B 狀態發光效果
+    if (inputBHigh) {
+        portB.shadowColor(inputBColor);
+        portB.shadowBlur(8);
+        portB.shadowOpacity(0.8);
+    }
+
+    // 輸出端點 (帶狀態顯示)
+    const portY = new Konva.Circle({
+        x: 40,
+        y: 0,
+        radius: 5,
+        fill: outputColor,
+        stroke: outputColor,
+        strokeWidth: 1,
+        name: 'port',
+    });
+    // 輸出狀態發光效果
+    if (outputHigh) {
+        portY.shadowColor('#00ff00');
+        portY.shadowBlur(12);
+        portY.shadowOpacity(1);
+    }
+
+    // 連接線（從閘體到端點）
+    const inputLineA = new Konva.Line({
+        points: [-40, -10, -30, -10],
+        stroke: inputAHigh ? inputAColor : strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    const inputLineB = new Konva.Line({
+        points: [-40, 10, -30, 10],
+        stroke: inputBHigh ? inputBColor : strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    const outputLine = new Konva.Line({
+        points: [20, 0, 40, 0],
+        stroke: outputHigh ? outputColor : strokeColor,
+        strokeWidth: strokeWidth,
+    });
+
+    group.add(inputLineA, inputLineB, outputLine);
+    group.add(portA, portB, portY);
+
+    // 標籤 (顯示閘名稱和狀態)
+    const stateText = `${inputAHigh ? '1' : '0'} & ${inputBHigh ? '1' : '0'} = ${outputHigh ? '1' : '0'}`;
+    const label = new Konva.Text({
+        x: -20,
+        y: -40,
+        text: `${component.label || 'AND'}\n${stateText}`,
+        fontSize: 10,
+        fill: '#888888',
+        align: 'center',
+    });
+    group.add(label);
+}
+
+/**
+ * 繪製OR邏輯閘
+ */
+export function drawORGate(group: Konva.Group, component: CircuitComponent) {
+    const strokeColor = component.selected ? '#4caf50' : '#cccccc';
+    const strokeWidth = component.selected ? 3 : 2;
+
+    // 判斷輸出狀態 (用於視覺回饋)
+    const outputHigh = component.logicOutput === true;
+    const inputAHigh = component.logicInputA === true;
+    const inputBHigh = component.logicInputB === true;
+
+    // 輸出顏色：HIGH 為亮綠色，LOW 為灰色
+    const outputColor = outputHigh ? '#00ff00' : '#ff5722';
+    const inputAColor = inputAHigh ? '#00bfff' : '#2196f3';
+    const inputBColor = inputBHigh ? '#00bfff' : '#2196f3';
+
+    // 如果選取，添加高亮背景
+    if (component.selected) {
+        const highlight = new Konva.Rect({
+            x: -45,
+            y: -25,
+            width: 90,
+            height: 50,
+            fill: 'rgba(76, 175, 80, 0.1)',
+            stroke: '#4caf50',
+            strokeWidth: 2,
+            cornerRadius: 4,
+            shadowColor: '#4caf50',
+            shadowBlur: 10,
+            shadowOpacity: 0.5,
+        });
+        group.add(highlight);
+    }
+
+    // OR閘的標準符號：前後都是圓弧
+    // 後側圓弧（輸入側）
+    const backArc = new Konva.Path({
+        data: 'M -30 -20 Q -25 0 -30 20',
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+        fill: 'transparent',
+    });
+
+    // 前側圓弧（輸出側）- 使用貝茲曲線創建盾形
+    const frontArc = new Konva.Path({
+        data: 'M -30 -20 Q 10 -20 20 0 Q 10 20 -30 20',
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+        fill: 'transparent',
+    });
+
+    group.add(backArc, frontArc);
+
+    // 輸入端點 A (帶狀態顯示)
+    const portA = new Konva.Circle({
+        x: -40,
+        y: -10,
+        radius: 4,
+        fill: inputAColor,
+        stroke: inputAColor,
+        strokeWidth: 1,
+        name: 'port',
+    });
+    if (inputAHigh) {
+        portA.shadowColor(inputAColor);
+        portA.shadowBlur(8);
+        portA.shadowOpacity(0.8);
+    }
+
+    // 輸入端點 B (帶狀態顯示)
+    const portB = new Konva.Circle({
+        x: -40,
+        y: 10,
+        radius: 4,
+        fill: inputBColor,
+        stroke: inputBColor,
+        strokeWidth: 1,
+        name: 'port',
+    });
+    if (inputBHigh) {
+        portB.shadowColor(inputBColor);
+        portB.shadowBlur(8);
+        portB.shadowOpacity(0.8);
+    }
+
+    // 輸出端點 (帶狀態顯示)
+    const portY = new Konva.Circle({
+        x: 40,
+        y: 0,
+        radius: 5,
+        fill: outputColor,
+        stroke: outputColor,
+        strokeWidth: 1,
+        name: 'port',
+    });
+    if (outputHigh) {
+        portY.shadowColor('#00ff00');
+        portY.shadowBlur(12);
+        portY.shadowOpacity(1);
+    }
+
+    // 連接線（從閘體到端點）
+    const inputLineA = new Konva.Line({
+        points: [-40, -10, -30, -10],
+        stroke: inputAHigh ? inputAColor : strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    const inputLineB = new Konva.Line({
+        points: [-40, 10, -30, 10],
+        stroke: inputBHigh ? inputBColor : strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    const outputLine = new Konva.Line({
+        points: [20, 0, 40, 0],
+        stroke: outputHigh ? outputColor : strokeColor,
+        strokeWidth: strokeWidth,
+    });
+
+    group.add(inputLineA, inputLineB, outputLine);
+    group.add(portA, portB, portY);
+
+    // 標籤 (顯示閘名稱和狀態)
+    const stateText = `${inputAHigh ? '1' : '0'} | ${inputBHigh ? '1' : '0'} = ${outputHigh ? '1' : '0'}`;
+    const label = new Konva.Text({
+        x: -20,
+        y: -40,
+        text: `${component.label || 'OR'}\n${stateText}`,
+        fontSize: 10,
+        fill: '#888888',
+        align: 'center',
+    });
+    group.add(label);
+}
+
+/**
  * 根據元件類型繪製對應的圖形
  */
 export function drawComponentShape(group: Konva.Group, component: CircuitComponent) {
@@ -574,6 +863,12 @@ export function drawComponentShape(group: Konva.Group, component: CircuitCompone
             break;
         case 'led':
             drawLED(group, component);
+            break;
+        case 'logic_and':
+            drawANDGate(group, component);
+            break;
+        case 'logic_or':
+            drawORGate(group, component);
             break;
         default:
             drawGenericComponent(group, component);

@@ -19,12 +19,15 @@ import {
     runDCAnalysis,
     runTransientAnalysis,
     runACSweepAnalysis,
+    DigitalLogicSimulator,
+    LogicLevel,
     type CircuitRuleViolation,
     type DCSimulationResult,
     type TransientSimulationResult,
     type TransientOptions,
     type ACSweepResult,
     type ACSweepOptions,
+    type DigitalSimulationResult,
 } from '@/lib/simulation';
 import type { AnalysisMode } from '@/types/frequencyAnalysis';
 
@@ -63,6 +66,10 @@ export const useCircuitStore = defineStore('circuit', () => {
         pointsPerDecade: 10,
         sweepType: 'logarithmic',
     });
+
+    // 數位邏輯模擬器和結果
+    const digitalSimulator = new DigitalLogicSimulator();
+    const digitalResult = ref<DigitalSimulationResult | null>(null);
 
     // 追蹤電壓變化事件（用於波形累積模式）
     const lastValueChange = ref<{
@@ -690,6 +697,96 @@ export const useCircuitStore = defineStore('circuit', () => {
         acSweepOptions.value = { ...acSweepOptions.value, ...options };
     }
 
+    // ========== 數位邏輯模擬功能 ==========
+
+    /**
+     * 判斷電路是否包含邏輯閘
+     */
+    function hasLogicGates(): boolean {
+        return components.value.some(c => DigitalLogicSimulator.isLogicGate(c.type));
+    }
+
+    /**
+     * 執行數位邏輯模擬
+     * 計算所有邏輯閘的輸出狀態並更新元件屬性
+     */
+    function runDigitalSimulation(): boolean {
+        if (!hasLogicGates()) {
+            digitalResult.value = null;
+            return true; // 沒有邏輯閘，視為成功（無需模擬）
+        }
+
+        try {
+            const result = digitalSimulator.simulate(components.value);
+            digitalResult.value = result;
+
+            if (result.success) {
+                // 將模擬結果更新到元件的 logicOutput 屬性
+                result.gateStates.forEach((state, componentId) => {
+                    const comp = components.value.find(c => c.id === componentId);
+                    if (comp) {
+                        comp.logicOutput = state.output === LogicLevel.HIGH;
+                    }
+                });
+                console.log('數位邏輯模擬成功', result);
+                return true;
+            } else {
+                simulationError.value = result.error || '數位邏輯模擬失敗';
+                return false;
+            }
+        } catch (error) {
+            simulationError.value = error instanceof Error ? error.message : '數位邏輯模擬錯誤';
+            console.error('數位邏輯模擬錯誤:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 設定邏輯閘的輸入值
+     * @param componentId 邏輯閘元件 ID
+     * @param inputName 輸入名稱 ('A' 或 'B')
+     * @param value 邏輯值 (true = HIGH, false = LOW)
+     */
+    function setLogicInput(componentId: string, inputName: 'A' | 'B', value: boolean): void {
+        const comp = components.value.find(c => c.id === componentId);
+        if (comp && DigitalLogicSimulator.isLogicGate(comp.type)) {
+            if (inputName === 'A') {
+                comp.logicInputA = value;
+            } else {
+                comp.logicInputB = value;
+            }
+            // 自動重新計算輸出
+            runDigitalSimulation();
+            saveState();
+        }
+    }
+
+    /**
+     * 切換邏輯閘的輸入值
+     * @param componentId 邏輯閘元件 ID
+     * @param inputName 輸入名稱 ('A' 或 'B')
+     */
+    function toggleLogicInput(componentId: string, inputName: 'A' | 'B'): void {
+        const comp = components.value.find(c => c.id === componentId);
+        if (comp && DigitalLogicSimulator.isLogicGate(comp.type)) {
+            if (inputName === 'A') {
+                comp.logicInputA = !(comp.logicInputA ?? false);
+            } else {
+                comp.logicInputB = !(comp.logicInputB ?? false);
+            }
+            // 自動重新計算輸出
+            runDigitalSimulation();
+            saveState();
+        }
+    }
+
+    /**
+     * 取得邏輯閘的完整狀態
+     */
+    function getLogicGateState(componentId: string) {
+        return digitalResult.value?.gateStates.get(componentId) ?? null;
+    }
+
     // 初始化第一筆紀錄
     initState();
 
@@ -706,6 +803,7 @@ export const useCircuitStore = defineStore('circuit', () => {
         dcResult,
         transientResult,
         acSweepResult,
+        digitalResult,
         simulationError,
         ruleViolations,
         analysisMode,
@@ -742,5 +840,11 @@ export const useCircuitStore = defineStore('circuit', () => {
         getComponentVoltage,
         undo,
         redo,
+        // Digital Logic
+        hasLogicGates,
+        runDigitalSimulation,
+        setLogicInput,
+        toggleLogicInput,
+        getLogicGateState,
     };
 });

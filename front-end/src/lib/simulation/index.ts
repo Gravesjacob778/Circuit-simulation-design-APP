@@ -11,3 +11,4 @@ export * from './MNASolver';
 export * from './CircuitRuleEngine';
 export * from './TransientSolver';
 export * from './ACSweepSolver';
+export * from './DigitalLogicSimulator';

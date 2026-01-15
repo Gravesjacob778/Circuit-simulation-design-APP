@@ -17,7 +17,9 @@ export type ComponentType =
     | 'switch'
     | 'led'
     | 'ammeter'
-    | 'voltmeter';
+    | 'voltmeter'
+    | 'logic_and'
+    | 'logic_or';
 
 // AC Source waveform types
 export type WaveformType = 'sine' | 'square' | 'triangle' | 'sawtooth';
@@ -50,6 +52,10 @@ export interface CircuitComponent {
     frequency?: number; // Frequency in Hz (default: 60Hz)
     phase?: number; // Phase angle in radians (default: 0)
     waveformType?: WaveformType; // Waveform shape (default: 'sine')
+    // Logic gate properties (for digital simulation)
+    logicInputA?: boolean; // Input A state (HIGH=true, LOW=false)
+    logicInputB?: boolean; // Input B state (HIGH=true, LOW=false)
+    logicOutput?: boolean; // Output state (computed from inputs)
 }
 
 // Wire connection

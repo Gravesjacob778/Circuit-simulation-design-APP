@@ -29,6 +29,8 @@ const iconMap: Record<string, string> = {
   switch: '⇆',
   ammeter: 'A',
   voltmeter: 'V',
+  'and-gate': '&',
+  'or-gate': '≥1',
 };
 
 function getIcon(iconName: string): string {
