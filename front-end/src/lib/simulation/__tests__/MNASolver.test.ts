@@ -424,4 +424,88 @@ describe('MNASolver', () => {
       expect(r1Current).toBeCloseTo(0.02997, 3);
     });
   });
+
+  describe('Logic Gate Integration', () => {
+    it('should treat logic gate output as voltage source', () => {
+      // 電路: Logic AND (output HIGH=5V) -> R1 1kΩ -> GND
+      // 邏輯閘輸出 5V，電阻電流應為 5V / 1000Ω = 5mA
+
+      const andGate: CircuitComponent = {
+        id: 'and1',
+        type: 'logic_and',
+        x: 0,
+        y: 0,
+        rotation: 0,
+        logicOutput: true, // 輸出為 HIGH
+        ports: [
+          { id: 'and1-p0', name: 'A', offsetX: -40, offsetY: -10 },
+          { id: 'and1-p1', name: 'B', offsetX: -40, offsetY: 10 },
+          { id: 'and1-p2', name: 'Y', offsetX: 40, offsetY: 0 },
+        ],
+      };
+
+      const components = [
+        andGate,
+        createComponent('r1', 'resistor', 1000),
+        createComponent('gnd', 'ground', undefined, [{ name: 'gnd' }]),
+      ];
+
+      const wires = [
+        // AND gate output (Y) -> R1
+        createWire('w1', 'and1', 2, 'r1', 0),
+        // R1 -> GND
+        createWire('w2', 'r1', 1, 'gnd', 0),
+      ];
+
+      const result = runDCAnalysis(components, wires);
+
+      expect(result.success).toBe(true);
+
+      // 邏輯閘輸出 5V，電阻電流應為 5V / 1000Ω = 5mA
+      const r1Current = result.branchCurrents.get('r1');
+      expect(r1Current).toBeDefined();
+      expect(r1Current).toBeCloseTo(0.005, 5); // 5mA
+    });
+
+    it('should treat logic gate output LOW as 0V', () => {
+      // 電路: Logic AND (output LOW=0V) -> R1 1kΩ -> GND
+      // 邏輯閘輸出 0V，電阻電流應為 0
+
+      const andGate: CircuitComponent = {
+        id: 'and1',
+        type: 'logic_and',
+        x: 0,
+        y: 0,
+        rotation: 0,
+        logicOutput: false, // 輸出為 LOW
+        ports: [
+          { id: 'and1-p0', name: 'A', offsetX: -40, offsetY: -10 },
+          { id: 'and1-p1', name: 'B', offsetX: -40, offsetY: 10 },
+          { id: 'and1-p2', name: 'Y', offsetX: 40, offsetY: 0 },
+        ],
+      };
+
+      const components = [
+        andGate,
+        createComponent('r1', 'resistor', 1000),
+        createComponent('gnd', 'ground', undefined, [{ name: 'gnd' }]),
+      ];
+
+      const wires = [
+        // AND gate output (Y) -> R1
+        createWire('w1', 'and1', 2, 'r1', 0),
+        // R1 -> GND
+        createWire('w2', 'r1', 1, 'gnd', 0),
+      ];
+
+      const result = runDCAnalysis(components, wires);
+
+      expect(result.success).toBe(true);
+
+      // 邏輯閘輸出 0V，電阻電流應接近 0
+      const r1Current = result.branchCurrents.get('r1');
+      expect(r1Current).toBeDefined();
+      expect(Math.abs(r1Current!)).toBeLessThan(1e-9); // 接近 0
+    });
+  });
 });

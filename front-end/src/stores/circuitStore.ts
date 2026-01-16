@@ -465,6 +465,11 @@ export const useCircuitStore = defineStore('circuit', () => {
 
     /**
      * 執行 DC 穩態模擬
+     * 對於包含邏輯閘的電路，會進行迭代求解：
+     * 1. 先執行 DC 分析（使用初始邏輯閘輸出狀態）
+     * 2. 執行數位邏輯模擬，根據節點電壓更新邏輯閘輸出
+     * 3. 如果邏輯閘輸出改變，重新執行 DC 分析
+     * 4. 重複直到收斂（最多 5 次迭代）
      */
     function runSimulation(): boolean {
         isSimulating.value = true;
@@ -481,27 +486,76 @@ export const useCircuitStore = defineStore('circuit', () => {
         }
 
         try {
-            const result = runDCAnalysis(components.value, wires.value);
-            dcResult.value = result;
+            const hasGates = hasLogicGates();
+            const MAX_ITERATIONS = 5;
+            let iterations = 0;
+            let converged = false;
+            
+            // 儲存上一次的邏輯閘輸出狀態，用於檢測收斂
+            let previousLogicOutputs = new Map<string, boolean>();
+            if (hasGates) {
+                for (const comp of components.value) {
+                    if (DigitalLogicSimulator.isLogicGate(comp.type)) {
+                        previousLogicOutputs.set(comp.id, comp.logicOutput ?? false);
+                    }
+                }
+            }
 
-            if (result.success) {
-                // 更新 simulationData 用於圖表顯示
-                updateSimulationData(result);
-                console.log('DC 模擬成功', result);
+            while (iterations < MAX_ITERATIONS && !converged) {
+                iterations++;
+                
+                // 執行 DC 分析
+                const result = runDCAnalysis(components.value, wires.value);
+                dcResult.value = result;
 
-                // 在 DC 模擬成功後執行數位邏輯模擬
-                // 這樣邏輯閘能夠根據節點電壓自動計算輸入
-                if (hasLogicGates()) {
-                    runDigitalSimulation();
+                if (!result.success) {
+                    simulationError.value = result.error || '未知錯誤';
+                    simulationData.value = null;
+                    console.warn('DC 模擬失敗:', result.error);
+                    isSimulating.value = false;
+                    return false;
                 }
 
-                return true;
-            } else {
-                simulationError.value = result.error || '未知錯誤';
-                simulationData.value = null;
-                console.warn('DC 模擬失敗:', result.error);
-                return false;
+                // 更新 simulationData 用於圖表顯示
+                updateSimulationData(result);
+                console.log(`DC 模擬成功 (迭代 ${iterations})`, result);
+
+                // 如果有邏輯閘，執行數位邏輯模擬
+                if (hasGates) {
+                    runDigitalSimulation();
+                    
+                    // 檢查邏輯閘輸出是否改變
+                    let outputChanged = false;
+                    const currentLogicOutputs = new Map<string, boolean>();
+                    for (const comp of components.value) {
+                        if (DigitalLogicSimulator.isLogicGate(comp.type)) {
+                            const currentOutput = comp.logicOutput ?? false;
+                            currentLogicOutputs.set(comp.id, currentOutput);
+                            
+                            const previousOutput = previousLogicOutputs.get(comp.id);
+                            if (previousOutput !== currentOutput) {
+                                outputChanged = true;
+                                console.log(`邏輯閘 ${comp.label || comp.id} 輸出改變: ${previousOutput} -> ${currentOutput}`);
+                            }
+                        }
+                    }
+                    
+                    if (!outputChanged) {
+                        converged = true;
+                        console.log(`邏輯閘模擬在第 ${iterations} 次迭代後收斂`);
+                    } else {
+                        previousLogicOutputs = currentLogicOutputs;
+                    }
+                } else {
+                    converged = true;
+                }
             }
+
+            if (!converged) {
+                console.warn(`邏輯閘模擬未收斂（達到最大迭代次數 ${MAX_ITERATIONS}）`);
+            }
+
+            return true;
         } catch (error) {
             simulationError.value = error instanceof Error ? error.message : '模擬執行錯誤';
             simulationData.value = null;

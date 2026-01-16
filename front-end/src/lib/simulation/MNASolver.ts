@@ -212,8 +212,9 @@ export class MNASolver {
     }
 
     // 檢查是否有電源
+    // 邏輯閘輸出也視為電源（受控電壓源）
     const hasPowerSource = components.some(
-      c => c.type === 'dc_source' || c.type === 'ac_source'
+      c => c.type === 'dc_source' || c.type === 'ac_source' || c.type.startsWith('logic_')
     );
     if (!hasPowerSource) {
       return { valid: false, error: '電路缺少電源（DC/AC Source）' };
@@ -450,6 +451,27 @@ export class MNASolver {
       case 'voltmeter':
         // 電壓表當作開路（理想電壓表內阻為無窮）
         this.addResistorStamp(G, node1Index, node2Index, 1e12); // 1TΩ
+        break;
+
+      default:
+        // 處理邏輯閘：輸出端口視為對地電壓源，輸入端口視為高阻抗
+        if (type.startsWith('logic_')) {
+          const { outputNodeIndex, logicOutputVoltage } = stamp;
+          if (outputNodeIndex !== undefined && currentVarIndex !== undefined) {
+            // 邏輯閘輸出視為對地的電壓源
+            // 輸出電壓由 logicOutputVoltage 決定（HIGH = 5V, LOW = 0V）
+            const voltage = logicOutputVoltage ?? 0;
+            this.addVoltageSourceStamp(G, I, outputNodeIndex, -1, voltage, nodeCount + currentVarIndex);
+          }
+          // 邏輯閘輸入端口 (node1Index, node2Index) 視為高阻抗輸入
+          // 添加對地的高阻抗來避免浮動節點
+          if (node1Index >= 0) {
+            this.addResistorStamp(G, node1Index, -1, 1e12); // 輸入 A 對地 1TΩ
+          }
+          if (node2Index >= 0) {
+            this.addResistorStamp(G, node2Index, -1, 1e12); // 輸入 B 對地 1TΩ
+          }
+        }
         break;
     }
   }

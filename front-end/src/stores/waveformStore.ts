@@ -137,7 +137,11 @@ export const useWaveformStore = defineStore('waveform', () => {
         };
 
         probes.value.push(probe);
-        probeData.value.set(probeId, []);
+        
+        // 創建新的 Map 以確保響應式更新被觸發
+        const newMap = new Map(probeData.value);
+        newMap.set(probeId, []);
+        probeData.value = newMap;
 
         return probe;
     }
@@ -177,7 +181,10 @@ export const useWaveformStore = defineStore('waveform', () => {
      * 更新探針資料
      */
     function updateProbeData(probeId: string, data: WaveformDataPoint[]): void {
-        probeData.value.set(probeId, data);
+        // 創建新的 Map 以確保響應式更新被觸發
+        const newMap = new Map(probeData.value);
+        newMap.set(probeId, data);
+        probeData.value = newMap;
         updateTimeRangeFromData();
     }
 
@@ -185,10 +192,12 @@ export const useWaveformStore = defineStore('waveform', () => {
      * 批次更新多個探針資料
      */
     function batchUpdateData(updates: Map<string, WaveformDataPoint[]>): void {
+        // 創建新的 Map 以確保響應式更新被觸發
+        const newMap = new Map(probeData.value);
         updates.forEach((data, probeId) => {
-            probeData.value.set(probeId, data);
+            newMap.set(probeId, data);
         });
-
+        probeData.value = newMap;
         updateTimeRangeFromData();
     }
 
@@ -214,7 +223,11 @@ export const useWaveformStore = defineStore('waveform', () => {
         const trimmed =
             combined.length > maxPoints ? combined.slice(combined.length - maxPoints) : combined;
 
-        probeData.value.set(probeId, trimmed);
+        // 創建新的 Map 以確保響應式更新被觸發
+        const newMap = new Map(probeData.value);
+        newMap.set(probeId, trimmed);
+        probeData.value = newMap;
+        
         updateTimeRangeFromData();
     }
 

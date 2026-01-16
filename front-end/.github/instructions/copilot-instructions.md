@@ -116,6 +116,7 @@ Six layers (bottom to top): gridLayer, guideLayer, wireLayer, currentFlowLayer, 
 1. Add definition in `config/componentDefinitions.ts` with standard port offsets
 2. Add renderer in `workspace/renderers/componentRenderers.ts::drawComponentShape()`
 3. Follow 60-unit length standard for two-terminal components
+4. When a prompt requests adding a component, implement both the **real simulation behavior** and the **visual rendering** (do not add placeholder-only components)
 
 ### New Calculation Logic
 Add to appropriate file in `src/lib/`:

@@ -123,6 +123,8 @@ function startStreamingSimulation() {
       timeScale,
       probes: probes.length,
     });
+  } else {
+    console.error('串流模擬啟動失敗', streamingSimulation.error.value);
   }
 }
 

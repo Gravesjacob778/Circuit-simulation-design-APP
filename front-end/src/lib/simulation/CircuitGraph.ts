@@ -6,6 +6,7 @@
 import type { CircuitComponent, Wire } from '@/types/circuit';
 import type { CircuitNode, ComponentStamp } from './SimulationTypes';
 import { LED_VF_DEFAULT, type LEDColor } from './SimulationTypes';
+import { DigitalLogicSimulator } from './DigitalLogicSimulator';
 
 /**
  * 電路圖類
@@ -176,6 +177,25 @@ export class CircuitGraph {
     // 開關元件需要傳遞 switchClosed 狀態
     if (comp.type === 'switch') {
       stamp.switchClosed = comp.switchClosed ?? false;
+    }
+
+    // 邏輯閘需要特殊處理：輸出端口視為電壓源
+    if (DigitalLogicSimulator.isLogicGate(comp.type)) {
+      // 找到輸出端口 Y
+      const outputPort = comp.ports.find(p => p.name === 'Y');
+      if (outputPort) {
+        const outputPortKey = `${comp.id}:${outputPort.id}`;
+        const outputNodeId = this.findRoot(portToNode, outputPortKey);
+        const outputNode = this.nodes.get(outputNodeId);
+        const outputNodeIndex = outputNode?.isGround ? -1 : (this.nodeIndexMap.get(outputNodeId) ?? -1);
+        
+        stamp.outputNodeIndex = outputNodeIndex;
+        // 根據 logicOutput 屬性設定輸出電壓（預設 HIGH = 5V）
+        // 如果尚未計算，使用元件上的 logicOutput 屬性
+        const isHigh = comp.logicOutput ?? false;
+        stamp.logicOutputVoltage = isHigh ? 5.0 : 0.0;
+        stamp.currentVarIndex = this.voltageSourceCount++;
+      }
     }
 
     // 電壓源和電感需要額外的電流變數

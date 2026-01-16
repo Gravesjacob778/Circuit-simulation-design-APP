@@ -100,6 +100,10 @@ export interface ComponentStamp {
   waveformType?: WaveformType;
   /** 開關狀態 (true = 閉合/導通, false = 開啟/斷開) */
   switchClosed?: boolean;
+  /** 邏輯閘輸出電壓 (用於邏輯閘類型) */
+  logicOutputVoltage?: number;
+  /** 邏輯閘輸出節點索引 (Y 端口，用於邏輯閘類型) */
+  outputNodeIndex?: number;
 }
 
 // ========== 瞬態分析類型定義 ==========
