@@ -173,6 +173,11 @@ export class CircuitGraph {
       value,
     };
 
+    // 開關元件需要傳遞 switchClosed 狀態
+    if (comp.type === 'switch') {
+      stamp.switchClosed = comp.switchClosed ?? false;
+    }
+
     // 電壓源和電感需要額外的電流變數
     // 二極體/LED 在改進的模型中也可能使用電壓源模型 (ON 狀態)
     if (

@@ -45,6 +45,12 @@ const isLED = computed(() => selectedComponent.value?.type === 'led');
 // 判斷是否為 AC 電源
 const isACSource = computed(() => selectedComponent.value?.type === 'ac_source');
 
+// 判斷是否為開關元件
+const isSwitch = computed(() => selectedComponent.value?.type === 'switch');
+
+// 取得開關狀態
+const switchClosed = computed(() => selectedComponent.value?.switchClosed ?? false);
+
 // 取得目前 LED 顏色
 const currentLEDColor = computed(() => selectedComponent.value?.ledColor ?? '');
 
@@ -98,6 +104,17 @@ function handleWaveformTypeChange(event: Event) {
   const waveformType = target.value as WaveformType;
   if (selectedComponent.value) {
     circuitStore.updateComponentProperty(selectedComponent.value.id, 'waveformType', waveformType);
+  }
+}
+
+// 切換開關狀態
+function toggleSwitch() {
+  if (selectedComponent.value && selectedComponent.value.type === 'switch') {
+    circuitStore.updateComponentProperty(
+      selectedComponent.value.id,
+      'switchClosed',
+      !switchClosed.value
+    );
   }
 }
 </script>
@@ -210,6 +227,18 @@ function handleWaveformTypeChange(event: Event) {
               </select>
             </div>
           </template>
+          <!-- Switch Toggle (僅開關元件顯示) -->
+          <div class="prop-item" v-if="isSwitch">
+            <label class="prop-label">State</label>
+            <button
+              class="switch-toggle-btn"
+              :class="{ 'switch-on': switchClosed, 'switch-off': !switchClosed }"
+              @click="toggleSwitch"
+            >
+              <span class="switch-indicator"></span>
+              <span class="switch-label">{{ switchClosed ? 'ON (Closed)' : 'OFF (Open)' }}</span>
+            </button>
+          </div>
           <div class="prop-item" v-if="selectedComponent.value !== undefined">
             <label class="prop-label">Value</label>
             <div class="prop-input-group">
@@ -511,6 +540,67 @@ function handleWaveformTypeChange(event: Event) {
   background-color: var(--color-bg-hover);
   color: var(--color-text-primary);
   border-color: var(--color-text-muted);
+}
+
+/* Switch Toggle Button */
+.switch-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 2px solid;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: all 0.3s ease;
+  width: 100%;
+  justify-content: center;
+}
+
+.switch-toggle-btn.switch-on {
+  background-color: rgba(76, 175, 80, 0.2);
+  border-color: #4caf50;
+  color: #4caf50;
+}
+
+.switch-toggle-btn.switch-off {
+  background-color: rgba(255, 152, 0, 0.2);
+  border-color: #ff9800;
+  color: #ff9800;
+}
+
+.switch-toggle-btn:hover {
+  transform: scale(1.02);
+}
+
+.switch-toggle-btn.switch-on:hover {
+  background-color: rgba(76, 175, 80, 0.3);
+}
+
+.switch-toggle-btn.switch-off:hover {
+  background-color: rgba(255, 152, 0, 0.3);
+}
+
+.switch-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+.switch-on .switch-indicator {
+  background-color: #4caf50;
+  box-shadow: 0 0 8px #4caf50;
+}
+
+.switch-off .switch-indicator {
+  background-color: #ff9800;
+  box-shadow: 0 0 8px #ff9800;
+}
+
+.switch-label {
+  font-family: var(--font-family-mono);
 }
 
 </style>

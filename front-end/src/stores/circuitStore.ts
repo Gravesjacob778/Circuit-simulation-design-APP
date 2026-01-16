@@ -218,6 +218,10 @@ export const useCircuitStore = defineStore('circuit', () => {
                 phase: AC_SOURCE_DEFAULTS.phase,
                 waveformType: AC_SOURCE_DEFAULTS.waveformType,
             }),
+            // 開關預設屬性：預設為斷開狀態
+            ...(type === 'switch' && {
+                switchClosed: false,
+            }),
         };
 
         components.value.push(newComponent);
@@ -291,8 +295,8 @@ export const useCircuitStore = defineStore('circuit', () => {
             saveState(); // 記錄操作
 
             // 需要觸發重新模擬的屬性
-            const simulationTriggerProps = ['value', 'frequency', 'phase', 'waveformType'];
-            
+            const simulationTriggerProps = ['value', 'frequency', 'phase', 'waveformType', 'switchClosed'];
+
             // 當這些屬性變化且動畫啟用時，自動重新模擬
             if (simulationTriggerProps.includes(property) && isCurrentAnimating.value) {
                 lastValueChange.value = {
@@ -484,6 +488,13 @@ export const useCircuitStore = defineStore('circuit', () => {
                 // 更新 simulationData 用於圖表顯示
                 updateSimulationData(result);
                 console.log('DC 模擬成功', result);
+
+                // 在 DC 模擬成功後執行數位邏輯模擬
+                // 這樣邏輯閘能夠根據節點電壓自動計算輸入
+                if (hasLogicGates()) {
+                    runDigitalSimulation();
+                }
+
                 return true;
             } else {
                 simulationError.value = result.error || '未知錯誤';
@@ -709,6 +720,7 @@ export const useCircuitStore = defineStore('circuit', () => {
     /**
      * 執行數位邏輯模擬
      * 計算所有邏輯閘的輸出狀態並更新元件屬性
+     * 會根據連接節點的電壓自動推導邏輯閘輸入
      */
     function runDigitalSimulation(): boolean {
         if (!hasLogicGates()) {
@@ -717,17 +729,187 @@ export const useCircuitStore = defineStore('circuit', () => {
         }
 
         try {
-            const result = digitalSimulator.simulate(components.value);
+            // 建立端口到節點電壓的映射
+            // 這允許邏輯閘根據連接的電壓來計算輸入
+            let portNodeVoltages: Map<string, number> | undefined;
+
+            if (dcResult.value?.success && dcResult.value.nodeVoltages.size > 0) {
+                portNodeVoltages = new Map<string, number>();
+
+                // 建立 Union-Find 結構來追蹤連接的端點
+                const portToRoot = new Map<string, string>();
+
+                // 為每個端點初始化（自己是自己的根）
+                for (const comp of components.value) {
+                    for (const port of comp.ports) {
+                        const portKey = `${comp.id}:${port.id}`;
+                        portToRoot.set(portKey, portKey);
+                    }
+                }
+
+                // 找到根節點的輔助函數
+                const findRoot = (key: string): string => {
+                    if (!portToRoot.has(key)) return key;
+                    let current = key;
+                    while (portToRoot.get(current) !== current) {
+                        current = portToRoot.get(current)!;
+                    }
+                    // 路徑壓縮
+                    portToRoot.set(key, current);
+                    return current;
+                };
+
+                // 合併兩個集合
+                const union = (a: string, b: string) => {
+                    const rootA = findRoot(a);
+                    const rootB = findRoot(b);
+                    if (rootA !== rootB) {
+                        portToRoot.set(rootB, rootA);
+                    }
+                };
+
+                // 根據導線合併節點
+                for (const wire of wires.value) {
+                    const fromKey = `${wire.fromComponentId}:${wire.fromPortId}`;
+                    const toKey = `${wire.toComponentId}:${wire.toPortId}`;
+                    union(fromKey, toKey);
+                }
+
+                // 現在，根據 dcResult 的 nodeVoltages 建立端口到電壓的映射
+                // dcResult.nodeVoltages 的 key 是 nodeId（是某個 portKey，代表一個節點群）
+                // 我們需要找出所有與該 nodeId 有相同根節點的端口，並設定相同電壓
+
+                // 先列印偵錯資訊
+                console.log('=== Digital Simulation Debug ===');
+                console.log('DC 模擬 nodeVoltages:', Object.fromEntries(dcResult.value.nodeVoltages));
+
+                // 為每個 nodeVoltage，找出所有屬於同一節點的端口
+                for (const [nodeId, voltage] of dcResult.value.nodeVoltages) {
+                    const nodeRoot = findRoot(nodeId);
+
+                    // 遍歷所有端口，找到與這個節點相同根的端口
+                    for (const [portKey] of portToRoot) {
+                        if (findRoot(portKey) === nodeRoot) {
+                            portNodeVoltages.set(portKey, voltage);
+                        }
+                    }
+                }
+
+                console.log('portNodeVoltages 映射:', Object.fromEntries(portNodeVoltages));
+
+                // 列印邏輯閘端口資訊
+                const logicGates = components.value.filter(c => DigitalLogicSimulator.isLogicGate(c.type));
+                for (const gate of logicGates) {
+                    console.log(`邏輯閘 ${gate.label || gate.id}:`, {
+                        type: gate.type,
+                        ports: gate.ports.map(p => ({
+                            name: p.name,
+                            id: p.id,
+                            portKey: `${gate.id}:${p.id}`,
+                            voltage: portNodeVoltages.get(`${gate.id}:${p.id}`)
+                        }))
+                    });
+                }
+            }
+
+            const result = digitalSimulator.simulate(
+                components.value,
+                wires.value,
+                portNodeVoltages
+            );
             digitalResult.value = result;
 
             if (result.success) {
-                // 將模擬結果更新到元件的 logicOutput 屬性
+                // 將模擬結果更新到元件的邏輯屬性
+                // 包括輸入 (logicInputA, logicInputB) 和輸出 (logicOutput)
                 result.gateStates.forEach((state, componentId) => {
                     const comp = components.value.find(c => c.id === componentId);
                     if (comp) {
+                        // 更新輸入狀態（讓渲染器能正確顯示輸入）
+                        comp.logicInputA = state.inputA === LogicLevel.HIGH;
+                        if (state.inputB !== undefined) {
+                            comp.logicInputB = state.inputB === LogicLevel.HIGH;
+                        }
+                        // 更新輸出狀態
                         comp.logicOutput = state.output === LogicLevel.HIGH;
                     }
                 });
+
+                // 將邏輯閘輸出電壓傳播到 dcResult.nodeVoltages
+                // 這樣電壓標籤才能正確顯示邏輯閘輸出節點的電壓
+                if (dcResult.value?.success && dcResult.value.nodeVoltages.size > 0) {
+                    // 建立 Union-Find 結構來追蹤連接的端點
+                    const portToRoot = new Map<string, string>();
+
+                    // 為每個端點初始化
+                    for (const comp of components.value) {
+                        for (const port of comp.ports) {
+                            const portKey = `${comp.id}:${port.id}`;
+                            portToRoot.set(portKey, portKey);
+                        }
+                    }
+
+                    // 找到根節點的輔助函數
+                    const findRoot = (key: string): string => {
+                        if (!portToRoot.has(key)) return key;
+                        let current = key;
+                        while (portToRoot.get(current) !== current) {
+                            current = portToRoot.get(current)!;
+                        }
+                        portToRoot.set(key, current);
+                        return current;
+                    };
+
+                    // 合併兩個集合
+                    const union = (a: string, b: string) => {
+                        const rootA = findRoot(a);
+                        const rootB = findRoot(b);
+                        if (rootA !== rootB) {
+                            portToRoot.set(rootB, rootA);
+                        }
+                    };
+
+                    // 根據導線合併節點
+                    for (const wire of wires.value) {
+                        const fromKey = `${wire.fromComponentId}:${wire.fromPortId}`;
+                        const toKey = `${wire.toComponentId}:${wire.toPortId}`;
+                        union(fromKey, toKey);
+                    }
+
+                    // 對於每個邏輯閘，更新其輸出端口所連接節點的電壓
+                    const logicGates = components.value.filter(c => DigitalLogicSimulator.isLogicGate(c.type));
+                    for (const gate of logicGates) {
+                        const gateState = result.gateStates.get(gate.id);
+                        if (!gateState) continue;
+
+                        // 找到輸出端口（名稱為 'Y' 的端口）
+                        const outputPort = gate.ports.find(p => p.name === 'Y');
+                        if (!outputPort) continue;
+
+                        const outputPortKey = `${gate.id}:${outputPort.id}`;
+                        const outputRoot = findRoot(outputPortKey);
+                        const outputVoltage = gateState.outputVoltage;
+
+                        console.log(`邏輯閘 ${gate.label || gate.id} 輸出電壓: ${outputVoltage}V, 輸出端口: ${outputPortKey}, 根節點: ${outputRoot}`);
+
+                        // 更新所有與輸出端口同一節點的 nodeVoltages
+                        // 首先找到 dcResult.nodeVoltages 中哪個 key 對應這個節點
+                        for (const [nodeId] of dcResult.value.nodeVoltages) {
+                            if (findRoot(nodeId) === outputRoot) {
+                                dcResult.value.nodeVoltages.set(nodeId, outputVoltage);
+                                console.log(`更新節點 ${nodeId} 電壓為 ${outputVoltage}V`);
+                            }
+                        }
+
+                        // 如果 nodeVoltages 中沒有這個節點，則需要新增
+                        // 使用 outputRoot 作為新節點的 key
+                        if (!Array.from(dcResult.value.nodeVoltages.keys()).some(nodeId => findRoot(nodeId) === outputRoot)) {
+                            dcResult.value.nodeVoltages.set(outputRoot, outputVoltage);
+                            console.log(`新增節點 ${outputRoot} 電壓為 ${outputVoltage}V`);
+                        }
+                    }
+                }
+
                 console.log('數位邏輯模擬成功', result);
                 return true;
             } else {

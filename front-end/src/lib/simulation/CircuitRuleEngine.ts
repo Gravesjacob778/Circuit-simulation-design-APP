@@ -222,7 +222,17 @@ function getNodeIdForPort(
 }
 
 /**
+ * Checks if the component type is a logic gate (multi-port, internally connected).
+ */
+function isLogicGateType(type: CircuitComponent['type']): boolean {
+  return type.startsWith('logic_');
+}
+
+/**
  * Constructs graph edges representing components connecting electrical nodes.
+ * For two-terminal components: creates a single edge between the two terminals.
+ * For multi-terminal components (logic gates, op-amps): creates edges connecting
+ * all terminals to enable path traversal through the component.
  */
 function buildComponentEdges(
   components: CircuitComponent[],
@@ -231,20 +241,45 @@ function buildComponentEdges(
 ): ComponentEdge[] {
   const edges: ComponentEdge[] = [];
   for (const comp of components) {
-    if (!isTwoTerminalComponent(comp)) continue;
-    if (!comp.ports[0] || !comp.ports[1]) continue;
+    // Skip components with fewer than 2 ports
+    if (comp.ports.length < 2) continue;
 
-    const n1 = getNodeIdForPort(rootToNodeId, findRoot, comp.id, comp.ports[0].id);
-    const n2 = getNodeIdForPort(rootToNodeId, findRoot, comp.id, comp.ports[1].id);
-    if (!n1 || !n2) continue;
+    // Handle two-terminal components (original logic)
+    if (comp.ports.length === 2) {
+      const n1 = getNodeIdForPort(rootToNodeId, findRoot, comp.id, comp.ports[0]!.id);
+      const n2 = getNodeIdForPort(rootToNodeId, findRoot, comp.id, comp.ports[1]!.id);
+      if (!n1 || !n2) continue;
 
-    edges.push({
-      componentId: comp.id,
-      type: comp.type,
-      n1,
-      n2,
-      effectiveResistanceOhms: getEffectiveResistanceOhms(comp),
-    });
+      edges.push({
+        componentId: comp.id,
+        type: comp.type,
+        n1,
+        n2,
+        effectiveResistanceOhms: getEffectiveResistanceOhms(comp),
+      });
+      continue;
+    }
+
+    // Handle multi-terminal components (logic gates, op-amps, etc.)
+    // For topology checking, we treat multi-port components as having
+    // internal connectivity between all ports (star topology from first port)
+    if (isLogicGateType(comp.type) || comp.type === 'opamp') {
+      const baseNode = getNodeIdForPort(rootToNodeId, findRoot, comp.id, comp.ports[0]!.id);
+      if (!baseNode) continue;
+
+      for (let i = 1; i < comp.ports.length; i++) {
+        const targetNode = getNodeIdForPort(rootToNodeId, findRoot, comp.id, comp.ports[i]!.id);
+        if (!targetNode || targetNode === baseNode) continue;
+
+        edges.push({
+          componentId: comp.id,
+          type: comp.type,
+          n1: baseNode,
+          n2: targetNode,
+          effectiveResistanceOhms: null, // Multi-port components don't have simple resistance
+        });
+      }
+    }
   }
   return edges;
 }

@@ -98,6 +98,8 @@ export interface ComponentStamp {
   phase?: number;
   /** AC 源波形類型 */
   waveformType?: WaveformType;
+  /** 開關狀態 (true = 閉合/導通, false = 開啟/斷開) */
+  switchClosed?: boolean;
 }
 
 // ========== 瞬態分析類型定義 ==========

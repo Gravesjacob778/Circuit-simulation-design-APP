@@ -42,7 +42,9 @@ function meanPoint(points: Point[]): Point | null {
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-function clampTiny(value: number, eps = 1e-9): number {
+// 使用較大的閾值 (1e-12) 來過濾開關斷開時的微小漏電流
+// 1TΩ 斷路電阻在 5V 下產生的漏電流約為 5e-12A
+function clampTiny(value: number, eps = 1e-11): number {
   return Math.abs(value) < eps ? 0 : value;
 }
 
@@ -65,24 +67,28 @@ function formatSI(value: number, unit: string, significantDigits = 3, preferred?
   if (v === 0) return `0 ${unit}`;
 
   const table: SIPrefix[] =
-    preferred ??
-    [
-      { factor: 1e9, prefix: 'G' },
-      { factor: 1e6, prefix: 'M' },
-      { factor: 1e3, prefix: 'k' },
-      { factor: 1, prefix: '' },
-      { factor: 1e-3, prefix: 'm' },
-      { factor: 1e-6, prefix: 'μ' },
-      { factor: 1e-9, prefix: 'n' },
-    ];
+    preferred && preferred.length > 0
+      ? preferred
+      : [
+          { factor: 1e9, prefix: 'G' },
+          { factor: 1e6, prefix: 'M' },
+          { factor: 1e3, prefix: 'k' },
+          { factor: 1, prefix: '' },
+          { factor: 1e-3, prefix: 'm' },
+          { factor: 1e-6, prefix: 'μ' },
+          { factor: 1e-9, prefix: 'n' },
+        ];
 
   const absV = Math.abs(v);
-  let chosen = table[3]!; // default 1
+  let chosen: SIPrefix | null = null;
   for (const entry of table) {
-    if (absV >= entry.factor) {
+    if (absV >= entry.factor && (!chosen || entry.factor > chosen.factor)) {
       chosen = entry;
-      break;
     }
+  }
+
+  if (!chosen) {
+    chosen = table.reduce((min, entry) => (entry.factor < min.factor ? entry : min), table[0]!);
   }
 
   const scaled = v / chosen.factor;
@@ -160,7 +166,8 @@ function getSourceCurrentDirectionArrow(
   sourceCurrentA: number
 ): SimulationOverlayItem | null {
   if (comp.ports.length < 2) return null;
-  if (Math.abs(sourceCurrentA) < 1e-9) return null;
+  // 使用較大的閾值 (1e-11) 來過濾開關斷開時的微小漏電流
+  if (Math.abs(sourceCurrentA) < 1e-11) return null;
 
   // MNA current variable is defined from port[0] -> port[1] (for sources: '+' -> '-').
   // If the value is negative, the physical current flows opposite (from '-' -> '+').
@@ -325,7 +332,8 @@ export function buildDCSimulationOverlayLabels(
     if (currentA === undefined) continue;
 
     // Filter near-zero currents to reduce clutter.
-    if (Math.abs(currentA) < 1e-9) continue;
+    // 使用較大的閾值 (1e-11) 來過濾開關斷開時的微小漏電流
+    if (Math.abs(currentA) < 1e-11) continue;
 
     const { pos, rotation } = getComponentCurrentLabelAnchor(comp);
     const isSource = comp.type === 'dc_source' || comp.type === 'ac_source';

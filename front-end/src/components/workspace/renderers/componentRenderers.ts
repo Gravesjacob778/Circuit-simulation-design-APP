@@ -842,6 +842,113 @@ export function drawORGate(group: Konva.Group, component: CircuitComponent) {
 }
 
 /**
+ * 繪製開關符號 (SPST - Single Pole Single Throw)
+ */
+export function drawSwitch(group: Konva.Group, component: CircuitComponent) {
+    const isClosed = component.switchClosed ?? false;
+    const strokeColor = component.selected ? '#4caf50' : '#cccccc';
+    const strokeWidth = component.selected ? 3 : 2;
+
+    // 如果選取，添加高亮背景
+    if (component.selected) {
+        const highlight = new Konva.Rect({
+            x: -45,
+            y: -20,
+            width: 90,
+            height: 40,
+            fill: 'rgba(76, 175, 80, 0.1)',
+            stroke: '#4caf50',
+            strokeWidth: 2,
+            cornerRadius: 4,
+            shadowColor: '#4caf50',
+            shadowBlur: 10,
+            shadowOpacity: 0.5,
+        });
+        group.add(highlight);
+    }
+
+    // 左側連接線
+    const leftLine = new Konva.Line({
+        points: [-40, 0, -15, 0],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    group.add(leftLine);
+
+    // 左側接點 (固定點)
+    const leftContact = new Konva.Circle({
+        x: -15,
+        y: 0,
+        radius: 3,
+        fill: strokeColor,
+        stroke: strokeColor,
+        strokeWidth: 1,
+    });
+    group.add(leftContact);
+
+    // 右側接點 (固定點)
+    const rightContact = new Konva.Circle({
+        x: 15,
+        y: 0,
+        radius: 3,
+        fill: strokeColor,
+        stroke: strokeColor,
+        strokeWidth: 1,
+    });
+    group.add(rightContact);
+
+    // 開關臂 (可動部分)
+    // 閉合時水平，開啟時斜向上
+    const switchArm = new Konva.Line({
+        points: isClosed ? [-15, 0, 15, 0] : [-15, 0, 12, -12],
+        stroke: isClosed ? '#4caf50' : '#ff9800',
+        strokeWidth: strokeWidth,
+        lineCap: 'round',
+    });
+    group.add(switchArm);
+
+    // 右側連接線
+    const rightLine = new Konva.Line({
+        points: [15, 0, 40, 0],
+        stroke: strokeColor,
+        strokeWidth: strokeWidth,
+    });
+    group.add(rightLine);
+
+    // 端點
+    const port1 = new Konva.Circle({
+        x: -40,
+        y: 0,
+        radius: 4,
+        fill: '#03a9f4',
+        stroke: '#03a9f4',
+        strokeWidth: 1,
+        name: 'port',
+    });
+    const port2 = new Konva.Circle({
+        x: 40,
+        y: 0,
+        radius: 4,
+        fill: '#03a9f4',
+        stroke: '#03a9f4',
+        strokeWidth: 1,
+        name: 'port',
+    });
+    group.add(port1, port2);
+
+    // 狀態指示標籤
+    const stateLabel = new Konva.Text({
+        x: -15,
+        y: -30,
+        text: `${component.label || 'SW'}\n${isClosed ? 'ON' : 'OFF'}`,
+        fontSize: 10,
+        fill: isClosed ? '#4caf50' : '#ff9800',
+        align: 'center',
+    });
+    group.add(stateLabel);
+}
+
+/**
  * 根據元件類型繪製對應的圖形
  */
 export function drawComponentShape(group: Konva.Group, component: CircuitComponent) {
@@ -869,6 +976,9 @@ export function drawComponentShape(group: Konva.Group, component: CircuitCompone
             break;
         case 'logic_or':
             drawORGate(group, component);
+            break;
+        case 'switch':
+            drawSwitch(group, component);
             break;
         default:
             drawGenericComponent(group, component);

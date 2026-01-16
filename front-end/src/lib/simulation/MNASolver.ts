@@ -224,6 +224,137 @@ export class MNASolver {
       return { valid: false, error: '電路元件未連接（無導線）' };
     }
 
+    // 檢查電路迴圈是否閉合（考慮開關狀態）
+    const loopValidation = this.validateClosedLoop(components, wires);
+    if (!loopValidation.valid) {
+      return loopValidation;
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * 驗證電路是否形成閉合迴圈（考慮開關狀態）
+   * 使用圖遍歷檢查電源正極是否能通過外部電路到達接地
+   */
+  private validateClosedLoop(
+    components: CircuitComponent[],
+    wires: Wire[]
+  ): { valid: boolean; error?: string } {
+    // 建立元件查找表
+    const componentMap = new Map<string, CircuitComponent>();
+    for (const comp of components) {
+      componentMap.set(comp.id, comp);
+    }
+
+    // 檢查是否有斷開的開關
+    const openSwitches = components.filter(c => c.type === 'switch' && !c.switchClosed);
+    if (openSwitches.length === 0) {
+      // 沒有斷開的開關，電路拓撲由導線決定，基本驗證已通過
+      return { valid: true };
+    }
+
+    // 建立連接圖（考慮開關狀態）
+    // portKey -> Set<portKey> 表示哪些端口是連通的
+    const adjacency = new Map<string, Set<string>>();
+
+    // 初始化所有端口
+    for (const comp of components) {
+      for (const port of comp.ports) {
+        const portKey = `${comp.id}:${port.id}`;
+        adjacency.set(portKey, new Set());
+      }
+    }
+
+    // 根據導線建立連接
+    for (const wire of wires) {
+      const fromKey = `${wire.fromComponentId}:${wire.fromPortId}`;
+      const toKey = `${wire.toComponentId}:${wire.toPortId}`;
+      adjacency.get(fromKey)?.add(toKey);
+      adjacency.get(toKey)?.add(fromKey);
+    }
+
+    // 對於導通的元件，內部端口互相連通
+    // 注意：電源（dc_source, ac_source）的端口不應該內部連通，
+    // 因為電流需要通過外部電路流動，不是直接從正極到負極
+    for (const comp of components) {
+      // 跳過斷開的開關 - 它的兩個端口不連通
+      if (comp.type === 'switch' && !comp.switchClosed) {
+        continue;
+      }
+
+      // 跳過電源 - 電流不能直接從正極流到負極（內部）
+      if (comp.type === 'dc_source' || comp.type === 'ac_source') {
+        continue;
+      }
+
+      // 對於其他元件（電阻、電容、電感等），內部端口互相連通（電流可以流過）
+      if (comp.ports.length >= 2) {
+        const ports = comp.ports.map(p => `${comp.id}:${p.id}`);
+        for (let i = 0; i < ports.length; i++) {
+          for (let j = i + 1; j < ports.length; j++) {
+            adjacency.get(ports[i]!)?.add(ports[j]!);
+            adjacency.get(ports[j]!)?.add(ports[i]!);
+          }
+        }
+      }
+    }
+
+    // 找到電源和接地
+    const powerSources = components.filter(c => c.type === 'dc_source' || c.type === 'ac_source');
+    const grounds = components.filter(c => c.type === 'ground');
+
+    if (powerSources.length === 0 || grounds.length === 0) {
+      return { valid: true }; // 這會在其他驗證中捕獲
+    }
+
+    // 對每個電源檢查是否能形成閉合迴圈
+    for (const source of powerSources) {
+      if (source.ports.length < 2) continue;
+
+      // 電源正極端口（通常是 port[0]，標記為 '+'）
+      const positivePortKey = `${source.id}:${source.ports[0]!.id}`;
+      
+      // 使用 BFS 從正極端口開始，看是否能到達接地
+      const visited = new Set<string>();
+      const queue: string[] = [positivePortKey];
+      visited.add(positivePortKey);
+
+      let canReachGround = false;
+
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        
+        // 檢查是否到達接地
+        const [compId] = current.split(':');
+        const comp = componentMap.get(compId!);
+        if (comp?.type === 'ground') {
+          canReachGround = true;
+          break;
+        }
+
+        // 遍歷相鄰節點
+        const neighbors = adjacency.get(current);
+        if (neighbors) {
+          for (const neighbor of neighbors) {
+            if (!visited.has(neighbor)) {
+              visited.add(neighbor);
+              queue.push(neighbor);
+            }
+          }
+        }
+      }
+
+      if (!canReachGround) {
+        // 找出是哪個開關導致斷路
+        const openSwitchNames = openSwitches.map(s => s.label || s.id).join(', ');
+        return {
+          valid: false,
+          error: `電路斷路：開關 ${openSwitchNames} 為關閉狀態，電路無法形成閉合迴圈`,
+        };
+      }
+    }
+
     return { valid: true };
   }
 
@@ -301,8 +432,14 @@ export class MNASolver {
         break;
 
       case 'switch':
-        // 開關預設為關閉（導通）狀態，當作小電阻
-        this.addResistorStamp(G, node1Index, node2Index, 0.01); // 10mΩ
+        // 開關根據 switchClosed 屬性決定導通或斷開
+        if (stamp.switchClosed) {
+          // 閉合狀態：使用小電阻 (10mΩ)
+          this.addResistorStamp(G, node1Index, node2Index, 0.01);
+        } else {
+          // 開啟狀態：使用超大電阻 (1TΩ) 模擬斷開，確保漏電流趨近於零
+          this.addResistorStamp(G, node1Index, node2Index, 1e12);
+        }
         break;
 
       case 'ammeter':
@@ -466,12 +603,21 @@ export class MNASolver {
           break;
         }
 
-        case 'switch':
-        case 'ammeter': {
-          // 小電阻計算電流
+        case 'switch': {
+          // 開關電流計算根據狀態使用不同電阻
           const v1 = node1Index >= 0 ? (nodeVoltages[node1Index] ?? 0) : 0;
           const v2 = node2Index >= 0 ? (nodeVoltages[node2Index] ?? 0) : 0;
-          const resistance = type === 'switch' ? 0.01 : 0.001;
+          const resistance = stamp.switchClosed ? 0.01 : 1e12;
+          const current = (v1 - v2) / resistance;
+          currents.set(componentId, current);
+          break;
+        }
+
+        case 'ammeter': {
+          // 電流表：小電阻計算電流
+          const v1 = node1Index >= 0 ? (nodeVoltages[node1Index] ?? 0) : 0;
+          const v2 = node2Index >= 0 ? (nodeVoltages[node2Index] ?? 0) : 0;
+          const resistance = 0.001; // 1mΩ
           const current = (v1 - v2) / resistance;
           currents.set(componentId, current);
           break;

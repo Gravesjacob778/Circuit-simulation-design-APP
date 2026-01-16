@@ -880,6 +880,14 @@ watch(
   }
 );
 
+// 監聽開關元件狀態變化（switchClosed）
+watch(
+  () => circuitStore.selectedComponent?.switchClosed,
+  () => {
+    updateComponentVisuals();
+  }
+);
+
 // 監聽導線變化
 watch(
   () => circuitStore.wires,

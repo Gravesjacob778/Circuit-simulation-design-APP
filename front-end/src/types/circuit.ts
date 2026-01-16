@@ -56,6 +56,8 @@ export interface CircuitComponent {
     logicInputA?: boolean; // Input A state (HIGH=true, LOW=false)
     logicInputB?: boolean; // Input B state (HIGH=true, LOW=false)
     logicOutput?: boolean; // Output state (computed from inputs)
+    // Switch-specific properties
+    switchClosed?: boolean; // Switch state (true=closed/conducting, false=open)
 }
 
 // Wire connection

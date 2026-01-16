@@ -8,7 +8,7 @@
  * - 支援多輸入閘（2輸入及以上）
  */
 
-import type { CircuitComponent } from '@/types/circuit';
+import type { CircuitComponent, Wire } from '@/types/circuit';
 
 /**
  * 邏輯電平定義
@@ -24,7 +24,7 @@ export type LogicLevel = typeof LogicLevel[keyof typeof LogicLevel];
 /**
  * 邏輯閘類型
  */
-export type LogicGateType = 
+export type LogicGateType =
   | 'logic_and'
   | 'logic_or'
   | 'logic_not'
@@ -139,8 +139,8 @@ export class DigitalLogicSimulator {
     if (a === LogicLevel.UNKNOWN || b === LogicLevel.UNKNOWN) {
       return LogicLevel.UNKNOWN;
     }
-    return (a === LogicLevel.HIGH && b === LogicLevel.HIGH) 
-      ? LogicLevel.HIGH 
+    return (a === LogicLevel.HIGH && b === LogicLevel.HIGH)
+      ? LogicLevel.HIGH
       : LogicLevel.LOW;
   }
 
@@ -152,8 +152,8 @@ export class DigitalLogicSimulator {
     if (a === LogicLevel.UNKNOWN || b === LogicLevel.UNKNOWN) {
       return LogicLevel.UNKNOWN;
     }
-    return (a === LogicLevel.HIGH || b === LogicLevel.HIGH) 
-      ? LogicLevel.HIGH 
+    return (a === LogicLevel.HIGH || b === LogicLevel.HIGH)
+      ? LogicLevel.HIGH
       : LogicLevel.LOW;
   }
 
@@ -230,11 +230,13 @@ export class DigitalLogicSimulator {
   /**
    * 模擬所有邏輯閘
    * @param components 電路元件列表
-   * @param _nodeVoltages 類比模擬的節點電壓結果（可選，用於從電壓推導邏輯電平）
+   * @param _wires 導線列表（保留向後兼容性，不再使用）
+   * @param portNodeVoltages 端口到節點電壓的映射（格式："componentId:portId" -> voltage）
    */
   public simulate(
     components: CircuitComponent[],
-    _nodeVoltages?: Map<string, number>
+    _wires?: Wire[],
+    portNodeVoltages?: Map<string, number>
   ): DigitalSimulationResult {
     const gateStates = new Map<string, LogicGateState>();
     const outputVoltages = new Map<string, number>();
@@ -250,26 +252,58 @@ export class DigitalLogicSimulator {
       };
     }
 
+    // 注意：portNodeVoltages 已經包含了所有端口的電壓映射
+    // 由呼叫者（circuitStore）負責建立這個映射
+
+    /**
+     * 取得邏輯閘輸入端口的電壓
+     * portNodeVoltages 已經包含了所有端口的電壓映射
+     */
+    const getInputVoltage = (gateId: string, portName: string): number | undefined => {
+      if (!portNodeVoltages) return undefined;
+
+      // 找到邏輯閘的該端口
+      const gate = components.find(c => c.id === gateId);
+      if (!gate) return undefined;
+
+      const port = gate.ports.find(p => p.name === portName);
+      if (!port) return undefined;
+
+      const portKey = `${gateId}:${port.id}`;
+
+      // portNodeVoltages 應該已經包含這個端口的電壓（如果它連接到有電壓的節點）
+      return portNodeVoltages.get(portKey);
+    };
+
     // 評估每個邏輯閘
     for (const gate of logicGates) {
-      // 取得輸入電平（優先使用元件上設定的邏輯輸入值）
       let inputA: LogicLevel;
       let inputB: LogicLevel = LogicLevel.UNKNOWN;
       const isNotGate = gate.type === 'logic_not' as string;
 
-      if (gate.logicInputA !== undefined) {
-        // 使用設定的邏輯輸入值
+      // 嘗試從連接節點的電壓推導輸入 A
+      const voltageA = getInputVoltage(gate.id, 'A');
+      if (voltageA !== undefined) {
+        // 使用連接節點的電壓轉換為邏輯電平
+        inputA = this.voltageToLogic(voltageA);
+      } else if (gate.logicInputA !== undefined) {
+        // 沒有連接，使用手動設定的邏輯輸入值
         inputA = this.boolToLogic(gate.logicInputA);
       } else {
-        // 如果沒有設定，預設為 LOW
+        // 完全沒有設定，預設為 LOW
         inputA = LogicLevel.LOW;
       }
 
-      if (gate.logicInputB !== undefined) {
-        inputB = this.boolToLogic(gate.logicInputB);
-      } else if (!isNotGate) {
-        // 雙輸入閘，如果沒有設定 B，預設為 LOW
-        inputB = LogicLevel.LOW;
+      // 嘗試從連接節點的電壓推導輸入 B（如果不是 NOT 閘）
+      if (!isNotGate) {
+        const voltageB = getInputVoltage(gate.id, 'B');
+        if (voltageB !== undefined) {
+          inputB = this.voltageToLogic(voltageB);
+        } else if (gate.logicInputB !== undefined) {
+          inputB = this.boolToLogic(gate.logicInputB);
+        } else {
+          inputB = LogicLevel.LOW;
+        }
       }
 
       // 計算輸出

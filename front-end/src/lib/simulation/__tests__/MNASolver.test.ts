@@ -143,6 +143,84 @@ describe('MNASolver', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('電源');
     });
+
+    it('should fail for circuit with open switch (no closed loop)', () => {
+      // 電路: DC 5V -> Switch (OFF) -> R1 1kΩ -> GND
+      // 開關斷開時，電路不應該形成閉合迴圈
+
+      const switchComp: CircuitComponent = {
+        id: 's1',
+        type: 'switch',
+        x: 0,
+        y: 0,
+        rotation: 0,
+        switchClosed: false, // 開關斷開
+        ports: [
+          { id: 's1-p0', name: '1', offsetX: 0, offsetY: -40 },
+          { id: 's1-p1', name: '2', offsetX: 0, offsetY: 40 },
+        ],
+      };
+
+      const components = [
+        createComponent('v1', 'dc_source', 5, [{ name: '+' }, { name: '-' }]),
+        switchComp,
+        createComponent('r1', 'resistor', 1000),
+        createComponent('gnd', 'ground', undefined, [{ name: 'gnd' }]),
+      ];
+
+      const wires = [
+        createWire('w1', 'v1', 0, 's1', 0),   // V+ -> Switch端口1
+        createWire('w2', 's1', 1, 'r1', 0),   // Switch端口2 -> R1
+        createWire('w3', 'r1', 1, 'gnd', 0),  // R1 -> GND
+        createWire('w4', 'v1', 1, 'gnd', 0),  // V- -> GND
+      ];
+
+      const result = runDCAnalysis(components, wires);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('斷路');
+      expect(result.error).toContain('開關');
+    });
+
+    it('should succeed for circuit with closed switch', () => {
+      // 電路: DC 5V -> Switch (ON) -> R1 1kΩ -> GND
+      // 開關閉合時，電路應該正常工作
+
+      const switchComp: CircuitComponent = {
+        id: 's1',
+        type: 'switch',
+        x: 0,
+        y: 0,
+        rotation: 0,
+        switchClosed: true, // 開關閉合
+        ports: [
+          { id: 's1-p0', name: '1', offsetX: 0, offsetY: -40 },
+          { id: 's1-p1', name: '2', offsetX: 0, offsetY: 40 },
+        ],
+      };
+
+      const components = [
+        createComponent('v1', 'dc_source', 5, [{ name: '+' }, { name: '-' }]),
+        switchComp,
+        createComponent('r1', 'resistor', 1000),
+        createComponent('gnd', 'ground', undefined, [{ name: 'gnd' }]),
+      ];
+
+      const wires = [
+        createWire('w1', 'v1', 0, 's1', 0),   // V+ -> Switch端口1
+        createWire('w2', 's1', 1, 'r1', 0),   // Switch端口2 -> R1
+        createWire('w3', 'r1', 1, 'gnd', 0),  // R1 -> GND
+        createWire('w4', 'v1', 1, 'gnd', 0),  // V- -> GND
+      ];
+
+      const result = runDCAnalysis(components, wires);
+
+      expect(result.success).toBe(true);
+      // 電流應該約為 5V / 1000Ω = 5mA
+      const current = result.branchCurrents.get('r1');
+      expect(current).toBeDefined();
+      expect(Math.abs(current!)).toBeCloseTo(0.005, 4);
+    });
   });
 
   describe('Simple DC Analysis', () => {
