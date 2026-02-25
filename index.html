@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circuit Simulation Design APP</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Circuit Simulation Design APP</h1>
+            <p>Design and simulate electronic circuits</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Component Library Panel -->
+            <aside class="component-panel">
+                <h2>Components</h2>
+                <div class="component-list">
+                    <button class="component-btn" data-type="resistor">
+                        <span class="component-icon">⚡</span>
+                        Resistor
+                    </button>
+                    <button class="component-btn" data-type="capacitor">
+                        <span class="component-icon">⚊⚊</span>
+                        Capacitor
+                    </button>
+                    <button class="component-btn" data-type="inductor">
+                        <span class="component-icon">〰️</span>
+                        Inductor
+                    </button>
+                    <button class="component-btn" data-type="voltage-source">
+                        <span class="component-icon">⊕</span>
+                        Voltage Source
+                    </button>
+                    <button class="component-btn" data-type="current-source">
+                        <span class="component-icon">⊙</span>
+                        Current Source
+                    </button>
+                    <button class="component-btn" data-type="wire">
+                        <span class="component-icon">─</span>
+                        Wire
+                    </button>
+                    <button class="component-btn" data-type="ground">
+                        <span class="component-icon">⏚</span>
+                        Ground
+                    </button>
+                </div>
+
+                <div class="controls">
+                    <h3>Circuit Actions</h3>
+                    <button id="simulate-btn" class="action-btn">▶ Simulate</button>
+                    <button id="clear-btn" class="action-btn">🗑️ Clear</button>
+                    <button id="save-btn" class="action-btn">💾 Save</button>
+                    <button id="load-btn" class="action-btn">📂 Load</button>
+                </div>
+            </aside>
+
+            <!-- Canvas Area -->
+            <div class="canvas-container">
+                <canvas id="circuit-canvas" width="800" height="600"></canvas>
+            </div>
+
+            <!-- Properties Panel -->
+            <aside class="properties-panel">
+                <h2>Properties</h2>
+                <div id="properties-content">
+                    <p class="hint">Select a component to view properties</p>
+                </div>
+
+                <div class="simulation-results">
+                    <h3>Simulation Results</h3>
+                    <div id="results-content">
+                        <p class="hint">Run simulation to see results</p>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <footer>
+            <p>Click on a component type to select it, then click on the canvas to place components. Click directly on components to edit their properties.</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
